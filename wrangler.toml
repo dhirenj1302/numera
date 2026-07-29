@@ -2,18 +2,10 @@ name = "numera"
 pages_build_output_dir = "./public"
 compatibility_date = "2026-07-27"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "numera"
-database_id = "9d6c61c6-427f-44e2-9014-0ea4a1120180"
-name = "numera"
-pages_build_output_dir = "./public"
-compatibility_date = "2026-07-27"
-
 [vars]
 OPENAI_MODEL = "gpt-4.1-mini"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "numera"
-database_id = "your-database-id"
+database_id = "9d6c61c6-427f-44e2-9014-0ea4a1120180"
