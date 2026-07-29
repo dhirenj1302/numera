@@ -1,0 +1,14 @@
+{
+  "name": "numera-homework",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev public --d1 DB=YOUR_DATABASE_ID",
+    "deploy": "wrangler pages deploy public",
+    "db:local": "wrangler d1 execute numera --local --file=schema.sql",
+    "db:remote": "wrangler d1 execute numera --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
