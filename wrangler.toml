@@ -5,4 +5,4 @@ compatibility_date = "2026-07-27"
 [[d1_databases]]
 binding = "DB"
 database_name = "numera"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "9d6c61c6-427f-44e2-9014-0ea4a1120180"
