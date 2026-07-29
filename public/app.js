@@ -9,7 +9,47 @@ const state = {
   attempts: [],
   selected: null,
   phase: "answer",
-  practiceQuestion: null
+  practiceQuestion: null,
+  voiceEnabled: localStorage.getItem("numera:voiceEnabled") === "true"
+};
+
+function preferredVoice(){
+  const voices = window.speechSynthesis?.getVoices?.() || [];
+  return voices.find(v => /^en-GB/i.test(v.lang) && /female|serena|samantha|karen|moira|google uk english female/i.test(v.name))
+    || voices.find(v => /^en-GB/i.test(v.lang))
+    || voices.find(v => /^en/i.test(v.lang))
+    || null;
+}
+
+function speak(text, force=false){
+  if (!("speechSynthesis" in window) || (!state.voiceEnabled && !force)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(String(text).replace(/<[^>]*>/g, " "));
+  utterance.lang = "en-GB";
+  utterance.rate = 0.92;
+  utterance.pitch = 1.05;
+  const voice = preferredVoice();
+  if (voice) utterance.voice = voice;
+  window.speechSynthesis.speak(utterance);
+}
+
+function voiceControl(label="Teacher voice"){
+  const icon = state.voiceEnabled ? "🔊" : "🔈";
+  const status = state.voiceEnabled ? "On" : "Off";
+  return `<button class="btn voice-btn" onclick="toggleVoice()">${icon} ${label}: ${status}</button>`;
+}
+
+window.toggleVoice = () => {
+  state.voiceEnabled = !state.voiceEnabled;
+  localStorage.setItem("numera:voiceEnabled", String(state.voiceEnabled));
+  if (!state.voiceEnabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  if (state.voiceEnabled) speak("Hello! I can read the questions and help you in a calm, friendly way.", true);
+  if (state.homework && state.studentName && state.index < state.homework.questions.length) renderQuestion();
+};
+
+window.readCurrentQuestion = () => {
+  const q = state.homework?.questions?.[state.index];
+  if (q) speak(`Question ${state.index + 1}. ${q.prompt}`, true);
 };
 
 const api = async (url, options={}) => {
@@ -304,6 +344,7 @@ function renderMission(){
         <p>${count} questions · hints and score upgrades included</p>
         <div style="font-size:34px">⭐ ⭐ ⭐</div>
       </div>
+      ${voiceControl()}
       <button class="btn green block" onclick="beginQuiz()">Start mission</button>
     </div>
   `);
@@ -319,6 +360,10 @@ function renderQuestion(){
   app.innerHTML=shell(`
     <div class="row between"><strong>Question ${state.index+1} of ${n}</strong><span class="pill">${esc(q.topic||state.homework.topic)}</span></div>
     <div class="progress" style="margin:12px 0"><div style="width:${pct}%"></div></div>
+    <div class="row wrap voice-row">
+      ${voiceControl()}
+      <button class="btn voice-btn" onclick="readCurrentQuestion()">▶ Read question</button>
+    </div>
     <div class="card">
       <div class="question-text">${formatMath(q.prompt)}</div>
       ${body}
@@ -326,6 +371,7 @@ function renderQuestion(){
     </div>
     <button class="btn ghost block" onclick="showHint()">💡 Show a hint</button>
   `);
+  if (state.voiceEnabled) setTimeout(() => speak(`Question ${state.index + 1}. ${q.prompt}`), 120);
 }
 window.selectOption=v=>{state.selected=v;renderQuestion();};
 function getStudentAnswer(q){
@@ -351,30 +397,40 @@ window.showHint=()=>{
   const q=state.homework.questions[state.index];
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:"",first_correct:false,retries:0,mastered:false,hint_used:true};
   record.hint_used=true; state.attempts[state.index]=record;
+  const hint = q.hint || "Break the problem into smaller steps.";
   app.innerHTML=shell(`
     <div class="card">
       <div class="mascot" style="text-align:center">💡</div>
       <h2>Here’s a clue</h2>
-      <div class="feedback hint">${esc(q.hint||"Break the problem into smaller steps.")}</div>
-      <button class="btn green block" onclick="renderQuestion()">Try the question</button>
+      <div class="feedback hint">${esc(hint)}</div>
+      ${voiceControl()}
+      <button class="btn green block" style="margin-top:10px" onclick="renderQuestion()">Try the question</button>
     </div>
   `,true);
+  if (state.voiceEnabled) setTimeout(() => speak(`Here is a clue. ${hint}`), 120);
 };
 function renderIncorrect(){
   const q=state.homework.questions[state.index];
+  const hint = q.hint || "Break the problem into smaller steps.";
+  const explanation = q.explanation || `The correct answer is ${q.answer}.`;
   app.innerHTML=shell(`
     <div class="card">
       <div class="mascot" style="text-align:center">🌱</div>
       <h1>Good try.</h1>
       <p>Let’s work it out together.</p>
-      <div class="feedback hint"><strong>Hint</strong><br>${esc(q.hint||"Break the problem into smaller steps.")}</div>
-      <div class="feedback learn"><strong>How it works</strong><br>${esc(q.explanation||`The correct answer is ${q.answer}.`)}</div>
+      <div class="feedback hint"><strong>Hint</strong><br>${esc(hint)}</div>
+      <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
+      ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
       <div class="field"><label>Your answer</label><input id="practiceInput" inputmode="decimal"></div>
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
   `,true);
+  if (state.voiceEnabled) {
+    const practice = q.practice_prompt ? `Now try this similar question. ${q.practice_prompt}` : "Now try the original question again.";
+    setTimeout(() => speak(`That was a good try. Mistakes help our brains grow. Here is a clue. ${hint}. Let us work through it. ${explanation}. ${practice}`), 120);
+  }
 }
 window.retryOriginal=()=>renderQuestion();
 window.checkPractice=()=>{
@@ -388,14 +444,19 @@ window.checkPractice=()=>{
   }
 };
 function renderCorrect(firstTry,upgraded=false){
+  const praise = firstTry
+    ? "Fantastic! You got it on your first attempt."
+    : "Well done! You learned from the mistake and mastered the skill.";
   app.innerHTML=shell(`
     <div class="mission">
       <div class="mascot">${firstTry?"🌟":"🏆"}</div>
       <h1>${firstTry?"Fantastic!":"Score upgraded!"}</h1>
       <div class="feedback good">${firstTry?"You got it on your first attempt.":"You learned from the mistake and mastered the skill."}</div>
-      <button class="btn green block" onclick="nextQuestion()">Next question</button>
+      ${voiceControl()}
+      <button class="btn green block" style="margin-top:10px" onclick="nextQuestion()">Next question</button>
     </div>
   `);
+  if (state.voiceEnabled) setTimeout(() => speak(praise), 120);
 }
 window.nextQuestion=()=>{
   state.index++;
@@ -444,8 +505,26 @@ function renderComplete(original,mastery,total,strengths,needs){
       <h3>Keep practising</h3><p>${needs.length?needs.map(x=>`• ${esc(x)}`).join("<br>"):"No topic stood out as needing further practice."}</p>
       <div class="feedback learn"><strong>Parent suggestion</strong><br>Ask ${esc(state.studentName)} to explain one question aloud. Explaining the method helps make the learning stick.</div>
     </div>
+    <div class="card teacher-results-card">
+      <h3>For the teacher or parent</h3>
+      <p class="muted">Open the results dashboard to see the original score, mastery score and any areas needing support.</p>
+      <a class="btn primary block teacher-results-button" href="#/results?id=${state.homework.id}">📊 View teacher results</a>
+      <button class="btn secondary block" style="margin-top:10px" onclick="shareTeacherResults()">Share teacher-results link</button>
+      <p class="small muted" style="margin-bottom:0">Prototype note: this link is not password protected yet, so share it only with the intended adult.</p>
+    </div>
   `);
+  if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
 }
+
+window.shareTeacherResults = async () => {
+  const url = `${location.origin}${location.pathname}#/results?id=${state.homework.id}`;
+  if (navigator.share) {
+    await navigator.share({title:"Numera teacher results", text:`${state.studentName}'s Numera results`, url});
+  } else {
+    await navigator.clipboard.writeText(url);
+    alert("Teacher-results link copied.");
+  }
+};
 
 async function renderResults(){
   let submissions=[];

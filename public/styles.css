@@ -103,3 +103,26 @@ th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute
   .question-text{font-size:25px}
   .topbar .tagline{display:none}
 }
+
+
+.voice-row{margin:10px 0 14px}
+.voice-btn{
+  background:#f5f3ff;
+  color:var(--purple);
+  border:1px solid #d9d1ff;
+  min-height:44px;
+}
+.teacher-results-card{
+  margin-top:14px;
+  margin-bottom:calc(22px + env(safe-area-inset-bottom));
+  border:2px solid #d9d1ff;
+}
+.teacher-results-button{
+  min-height:56px;
+  font-size:17px;
+}
+@media(max-width:650px){
+  .voice-row{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .voice-row .btn{padding:11px 8px;font-size:13px}
+  .teacher-results-card{position:relative;z-index:2}
+}
