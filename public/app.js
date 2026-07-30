@@ -234,33 +234,51 @@ async function imageToJpegDataURL(file){
   return canvas.toDataURL("image/jpeg",0.86);
 }
 
-async function cropVisualFromDataURL(dataUrl,bbox){
-  if(!Array.isArray(bbox) || bbox.length!==4 || bbox.every(v=>Number(v)===0)) return "";
+async function visualFromDataURL(dataUrl,bbox,forceFullPage=false){
   const img=await new Promise((resolve,reject)=>{
     const image=new Image(); image.onload=()=>resolve(image); image.onerror=reject; image.src=dataUrl;
   });
-  let [x,y,w,h]=bbox.map(Number);
-  x=Math.max(0,Math.min(1000,x)); y=Math.max(0,Math.min(1000,y));
-  w=Math.max(1,Math.min(1000-x,w)); h=Math.max(1,Math.min(1000-y,h));
-  const pad=25;
-  x=Math.max(0,x-pad); y=Math.max(0,y-pad); w=Math.min(1000-x,w+pad*2); h=Math.min(1000-y,h+pad*2);
+  const validBox=Array.isArray(bbox) && bbox.length===4 && !bbox.every(v=>Number(v)===0);
+  let x=0,y=0,w=1000,h=1000;
+  if(validBox && !forceFullPage){
+    [x,y,w,h]=bbox.map(Number);
+    x=Math.max(0,Math.min(1000,x)); y=Math.max(0,Math.min(1000,y));
+    w=Math.max(1,Math.min(1000-x,w)); h=Math.max(1,Math.min(1000-y,h));
+    // Generous padding is important for pictogram keys, graph labels and shape dimensions.
+    const pad=70;
+    x=Math.max(0,x-pad); y=Math.max(0,y-pad);
+    w=Math.min(1000-x,w+pad*2); h=Math.min(1000-y,h+pad*2);
+  }
   const sx=Math.round(img.naturalWidth*x/1000), sy=Math.round(img.naturalHeight*y/1000);
   const sw=Math.max(1,Math.round(img.naturalWidth*w/1000)), sh=Math.max(1,Math.round(img.naturalHeight*h/1000));
-  const maxSide=760, scale=Math.min(1,maxSide/Math.max(sw,sh));
+  const maxSide=980, scale=Math.min(1,maxSide/Math.max(sw,sh));
   const canvas=document.createElement("canvas");
   canvas.width=Math.max(1,Math.round(sw*scale)); canvas.height=Math.max(1,Math.round(sh*scale));
   const ctx=canvas.getContext("2d");
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
-  return canvas.toDataURL("image/jpeg",0.78);
+  return canvas.toDataURL("image/jpeg",0.82);
+}
+
+function questionClearlyNeedsVisual(q){
+  const text=`${q.prompt||""} ${q.topic||""}`.toLowerCase();
+  return Boolean(q.needs_visual) || /pictogram|diagram|grid|graph|chart|shape|clock|number line|table|picture|image|fraction model|symmetr|angle|coordinate/.test(text);
 }
 
 async function attachQuestionVisuals(draft){
   for(const q of draft.questions||[]){
     const pageIndex=Number(q.page_index);
-    if(q.needs_visual && state.sourceImages[pageIndex]){
-      try{ q.visual_data_url=await cropVisualFromDataURL(state.sourceImages[pageIndex],q.visual_bbox); }
-      catch{ q.visual_data_url=state.sourceImages[pageIndex]; }
+    const source=state.sourceImages[pageIndex];
+    q.needs_visual=questionClearlyNeedsVisual(q);
+    if(q.needs_visual && source){
+      try{
+        q.visual_data_url=await visualFromDataURL(source,q.visual_bbox,false);
+        // A missing or implausibly tiny crop is worse than showing the full worksheet page.
+        if(!q.visual_data_url || q.visual_data_url.length<2000) q.visual_data_url=await visualFromDataURL(source,[0,0,0,0],true);
+      }catch{
+        try{ q.visual_data_url=await visualFromDataURL(source,[0,0,0,0],true); }
+        catch{ q.visual_data_url=""; }
+      }
     } else {
       q.visual_data_url="";
     }
@@ -339,7 +357,7 @@ function questionEditor(q,i){
       ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>Image from the worksheet</figcaption></figure>` : ""}
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
@@ -476,12 +494,34 @@ function renderMission(){
 }
 window.beginQuiz=()=>{state.phase="answer";state.selected=null;renderQuestion();};
 
+function isTimeQuestion(q){
+  return q?.type==="time" || /^\d{1,2}:\d{2}$/.test(String(q?.answer||"").trim());
+}
+function timeAnswerMarkup(prefix=""){
+  return `<div class="time-answer" role="group" aria-label="Enter the time">
+    <div class="field"><label for="${prefix}hourInput">Hour</label><input id="${prefix}hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="3" autocomplete="off"></div>
+    <span class="time-colon" aria-hidden="true">:</span>
+    <div class="field"><label for="${prefix}minuteInput">Minutes</label><input id="${prefix}minuteInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="07" autocomplete="off"></div>
+  </div>`;
+}
+function readTimeAnswer(prefix=""){
+  const hour=$("#"+prefix+"hourInput")?.value.trim()||"";
+  const minute=$("#"+prefix+"minuteInput")?.value.trim()||"";
+  if(!hour && !minute) return "";
+  if(!/^\d{1,2}$/.test(hour) || !/^\d{1,2}$/.test(minute)) return null;
+  const h=Number(hour), m=Number(minute);
+  if(h>23 || m>59) return null;
+  return `${h}:${String(m).padStart(2,"0")}`;
+}
+
 function renderQuestion(){
   const q=state.homework.questions[state.index], n=state.homework.questions.length;
   const pct=(state.index/n)*100;
   const body=q.type==="multiple_choice"
     ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
-    : `<div class="field"><label>Your answer</label><input id="answerInput" inputmode="decimal" autocomplete="off" placeholder="Type your answer"></div>`;
+    : isTimeQuestion(q)
+      ? timeAnswerMarkup("")
+      : `<div class="field"><label>Your answer</label><input id="answerInput" inputmode="decimal" autocomplete="off" placeholder="Type your answer"></div>`;
   app.innerHTML=shell(`
     <div class="row between"><strong>Question ${state.index+1} of ${n}</strong><span class="pill">${esc(q.topic||state.homework.topic)}</span></div>
     <div class="progress" style="margin:12px 0"><div style="width:${pct}%"></div></div>
@@ -501,13 +541,20 @@ function renderQuestion(){
 }
 window.selectOption=v=>{state.selected=v;renderQuestion();};
 function getStudentAnswer(q){
-  return q.type==="multiple_choice" ? state.selected : ($("#answerInput")?.value||"").trim();
+  if(q.type==="multiple_choice") return state.selected;
+  if(isTimeQuestion(q)) return readTimeAnswer("");
+  return ($("#answerInput")?.value||"").trim();
 }
-function normalise(v){return String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");}
+function normalise(v){
+  const raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
+  const time=raw.match(/^(\d{1,2}):(\d{1,2})$/);
+  return time ? `${Number(time[1])}:${String(Number(time[2])).padStart(2,"0")}` : raw;
+}
 function isCorrect(given,answer){return normalise(given)===normalise(answer);}
 window.checkAnswer=()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null || given==="") return alert("Enter or choose an answer.");
+  if(given===null) return alert("Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given==="") return alert("Enter or choose an answer.");
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false};
   if(!state.attempts[state.index]){
     record.first_answer=given;
@@ -548,7 +595,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      <div class="field"><label>Your answer</label><input id="practiceInput" inputmode="decimal"></div>
+      ${/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice") : `<div class="field"><label>Your answer</label><input id="practiceInput" inputmode="decimal"></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
@@ -560,13 +607,30 @@ function renderIncorrect(){
 }
 window.retryOriginal=()=>renderQuestion();
 window.checkPractice=()=>{
-  const q=state.homework.questions[state.index], v=$("#practiceInput").value.trim();
-  if(!v)return alert("Enter an answer.");
+  const q=state.homework.questions[state.index];
+  const timePractice=/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim());
+  const v=timePractice ? readTimeAnswer("practice") : ($("#practiceInput")?.value||"").trim();
+  if(v===null) return alert("Enter a valid hour and minutes.");
+  if(!v) return alert("Enter an answer.");
+  const record=state.attempts[state.index];
+  record.practice_attempts=(record.practice_attempts||0)+1;
   if(isCorrect(v,q.practice_answer)){
-    state.attempts[state.index].mastered=true;
+    record.mastered=true;
     renderCorrect(false,true);
+  } else if(record.practice_attempts===1){
+    const existing=$("#practiceRetryMessage");
+    if(existing) existing.remove();
+    $(".card").insertAdjacentHTML("beforeend",`<div id="practiceRetryMessage" class="feedback hint">Nearly. Re-read the explanation and try once more.</div>`);
   } else {
-    $(".card").insertAdjacentHTML("beforeend",`<div class="feedback hint">Nearly. Re-read the explanation and try once more.</div>`);
+    app.innerHTML=shell(`
+      <div class="mission">
+        <div class="mascot">🌱</div>
+        <h1>Let’s keep going</h1>
+        <div class="feedback learn">That one was still tricky. Numera has recorded it as a skill to practise, and we’ll move to the next question.</div>
+        <button class="btn green block" onclick="nextQuestion()">Next question</button>
+      </div>
+    `);
+    if(state.voiceEnabled) setTimeout(()=>speak("That one was still tricky. That is okay. We will practise it again another time and move to the next question."),120);
   }
 };
 function renderCorrect(firstTry,upgraded=false){
