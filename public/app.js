@@ -14,6 +14,14 @@ const state = {
   voiceEnabled: localStorage.getItem("numera:voiceEnabled") === "true"
 };
 
+const cropEditor = {
+  questionIndex: null,
+  box: {x: 0.08, y: 0.08, width: 0.84, height: 0.60},
+  startBox: null,
+  pointerStart: null,
+  mode: null
+};
+
 function preferredVoice(){
   const voices = window.speechSynthesis?.getVoices?.() || [];
   return voices.find(v => /^en-GB/i.test(v.lang) && /female|serena|samantha|karen|moira|google uk english female/i.test(v.name))
@@ -260,6 +268,193 @@ async function visualFromDataURL(dataUrl,bbox,forceFullPage=false){
   return canvas.toDataURL("image/jpeg",0.82);
 }
 
+
+async function exactVisualFromDataURL(dataUrl,bbox){
+  const img=await new Promise((resolve,reject)=>{
+    const image=new Image(); image.onload=()=>resolve(image); image.onerror=reject; image.src=dataUrl;
+  });
+  let [x,y,w,h]=(Array.isArray(bbox)&&bbox.length===4?bbox:[0,0,1000,1000]).map(Number);
+  x=Math.max(0,Math.min(1000,x)); y=Math.max(0,Math.min(1000,y));
+  w=Math.max(20,Math.min(1000-x,w)); h=Math.max(20,Math.min(1000-y,h));
+  const sx=Math.round(img.naturalWidth*x/1000), sy=Math.round(img.naturalHeight*y/1000);
+  const sw=Math.max(1,Math.round(img.naturalWidth*w/1000)), sh=Math.max(1,Math.round(img.naturalHeight*h/1000));
+  const maxSide=1200, scale=Math.min(1,maxSide/Math.max(sw,sh));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(sw*scale)); canvas.height=Math.max(1,Math.round(sh*scale));
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL("image/jpeg",0.86);
+}
+
+function normalisedBoxFromAI(bbox){
+  if(!Array.isArray(bbox) || bbox.length!==4 || bbox.every(v=>Number(v)===0)){
+    return {x:0.05,y:0.05,width:0.90,height:0.75};
+  }
+  let [x,y,w,h]=bbox.map(v=>Number(v)/1000);
+  x=Math.max(0,Math.min(.95,x)); y=Math.max(0,Math.min(.95,y));
+  w=Math.max(.08,Math.min(1-x,w)); h=Math.max(.08,Math.min(1-y,h));
+  return {x,y,width:w,height:h};
+}
+
+function clampCropBox(box){
+  const min=.06;
+  box.width=Math.max(min,Math.min(1,box.width));
+  box.height=Math.max(min,Math.min(1,box.height));
+  box.x=Math.max(0,Math.min(1-box.width,box.x));
+  box.y=Math.max(0,Math.min(1-box.height,box.y));
+  return box;
+}
+
+function renderCropSelection(){
+  const selection=document.querySelector(".crop-selection");
+  if(!selection) return;
+  const b=clampCropBox({...cropEditor.box});
+  cropEditor.box=b;
+  selection.style.left=`${b.x*100}%`;
+  selection.style.top=`${b.y*100}%`;
+  selection.style.width=`${b.width*100}%`;
+  selection.style.height=`${b.height*100}%`;
+}
+
+window.openCropEditor = i => {
+  syncEditors();
+  const q=state.draft.questions[i];
+  const source=state.sourceImages[Number(q.page_index)];
+  if(!source) return alert("The original worksheet page is no longer available. Rescan the page to adjust its image.");
+  q.ai_visual_bbox ||= Array.isArray(q.visual_bbox) ? [...q.visual_bbox] : [0,0,1000,1000];
+  cropEditor.questionIndex=i;
+  cropEditor.box=q.visual_user_box
+    ? {...q.visual_user_box}
+    : normalisedBoxFromAI(q.visual_bbox);
+  const overlay=document.createElement("div");
+  overlay.className="crop-editor-overlay";
+  overlay.innerHTML=`
+    <div class="crop-editor-shell">
+      <header class="crop-editor-header">
+        <button class="btn ghost" type="button" onclick="closeCropEditor()">✕</button>
+        <div><strong>Adjust worksheet image</strong><small>Question ${i+1} · ${esc(q.source_label||`Page ${Number(q.page_index)+1}`)}</small></div>
+        <button class="btn primary crop-save-top" type="button" onclick="saveCropEditor()">Save</button>
+      </header>
+      <div class="crop-instructions">Drag the selected area. Use the corner handle to resize it.</div>
+      <div class="crop-stage">
+        <div class="crop-image-wrap">
+          <img src="${source}" alt="Original worksheet page">
+          <div class="crop-dim crop-dim-all"></div>
+          <div class="crop-selection" role="application" aria-label="Selected image area">
+            <span class="crop-handle crop-handle-se" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+      <div class="crop-preview-panel">
+        <strong>What the student will see</strong>
+        <div id="cropPreview" class="crop-preview-placeholder">Save the crop to update the preview</div>
+      </div>
+      <footer class="crop-editor-actions">
+        <button class="btn secondary" type="button" onclick="resetCropToAI()">Reset AI crop</button>
+        <button class="btn secondary" type="button" onclick="useFullPageCrop()">Use full page</button>
+        <button class="btn danger" type="button" onclick="removeQuestionImage()">Remove image</button>
+        <button class="btn primary block" type="button" onclick="saveCropEditor()">Save image</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.classList.add("crop-editor-open");
+  const selection=overlay.querySelector(".crop-selection");
+  selection.addEventListener("pointerdown",startCropPointer);
+  renderCropSelection();
+};
+
+window.closeCropEditor = () => {
+  document.querySelector(".crop-editor-overlay")?.remove();
+  document.body.classList.remove("crop-editor-open");
+  cropEditor.mode=null;
+};
+
+function startCropPointer(e){
+  e.preventDefault();
+  const isHandle=e.target.classList.contains("crop-handle");
+  cropEditor.mode=isHandle?"resize":"move";
+  cropEditor.pointerStart={x:e.clientX,y:e.clientY};
+  cropEditor.startBox={...cropEditor.box};
+  e.currentTarget.setPointerCapture?.(e.pointerId);
+  window.addEventListener("pointermove",moveCropPointer);
+  window.addEventListener("pointerup",endCropPointer,{once:true});
+}
+
+function moveCropPointer(e){
+  const wrap=document.querySelector(".crop-image-wrap");
+  if(!wrap || !cropEditor.pointerStart || !cropEditor.startBox) return;
+  const rect=wrap.getBoundingClientRect();
+  const dx=(e.clientX-cropEditor.pointerStart.x)/rect.width;
+  const dy=(e.clientY-cropEditor.pointerStart.y)/rect.height;
+  const b={...cropEditor.startBox};
+  if(cropEditor.mode==="move"){
+    b.x+=dx; b.y+=dy;
+  }else{
+    b.width+=dx; b.height+=dy;
+  }
+  cropEditor.box=clampCropBox(b);
+  renderCropSelection();
+}
+
+function endCropPointer(){
+  window.removeEventListener("pointermove",moveCropPointer);
+  cropEditor.pointerStart=null;
+  cropEditor.startBox=null;
+  cropEditor.mode=null;
+}
+
+window.resetCropToAI = () => {
+  const q=state.draft.questions[cropEditor.questionIndex];
+  cropEditor.box=normalisedBoxFromAI(q.ai_visual_bbox||q.visual_bbox);
+  renderCropSelection();
+};
+
+window.useFullPageCrop = () => {
+  cropEditor.box={x:0,y:0,width:1,height:1};
+  renderCropSelection();
+};
+
+window.removeQuestionImage = () => {
+  const i=cropEditor.questionIndex;
+  const q=state.draft.questions[i];
+  q.visual_data_url="";
+  q.needs_visual=false;
+  q.visual_user_box=null;
+  closeCropEditor();
+  renderReview();
+  setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+};
+
+window.saveCropEditor = async () => {
+  const i=cropEditor.questionIndex;
+  const q=state.draft.questions[i];
+  const source=state.sourceImages[Number(q.page_index)];
+  if(!source) return alert("The source page is unavailable.");
+  const b=clampCropBox({...cropEditor.box});
+  const bbox=[
+    Math.round(b.x*1000),
+    Math.round(b.y*1000),
+    Math.round(b.width*1000),
+    Math.round(b.height*1000)
+  ];
+  try{
+    const saveButtons=document.querySelectorAll(".crop-editor-overlay .btn.primary");
+    saveButtons.forEach(btn=>{btn.disabled=true;btn.textContent="Saving…";});
+    q.visual_bbox=bbox;
+    q.visual_user_box=b;
+    q.visual_user_adjusted=true;
+    q.needs_visual=true;
+    q.visual_data_url=await exactVisualFromDataURL(source,bbox);
+    closeCropEditor();
+    renderReview();
+    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+  }catch(e){
+    alert(e.message||"The image crop could not be saved.");
+    document.querySelectorAll(".crop-editor-overlay .btn.primary").forEach(btn=>{btn.disabled=false;btn.textContent="Save";});
+  }
+};
+
 function questionClearlyNeedsVisual(q){
   const text=`${q.prompt||""} ${q.topic||""}`.toLowerCase();
   return Boolean(q.needs_visual) || /pictogram|diagram|grid|graph|chart|shape|clock|number line|table|picture|image|fraction model|symmetr|angle|coordinate/.test(text);
@@ -354,7 +549,11 @@ function questionEditor(q,i){
     <summary><span class="question-number">${i+1}</span><span class="summary-copy"><strong>${esc(q.prompt||"Untitled question")}</strong><small>${esc(q.topic||"Maths")} · Answer: ${esc(String(q.answer||"Not set"))}</small></span><span class="chevron">⌄</span></summary>
     <div class="question-form">
       <div class="question-source-row"><span class="pill">${esc(q.source_label||`Page ${(q.page_index??0)+1}`)}</span>${q.needs_visual?`<span class="pill orange">Visual question</span>`:""}</div>
-      ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>Image from the worksheet</figcaption></figure>` : ""}
+      ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>${q.visual_user_adjusted?"Teacher-adjusted image":"AI-selected image from the worksheet"}</figcaption></figure>` : `<div class="visual-missing-note">${q.needs_visual?"This question may need an image. Select the relevant area from the worksheet.":"No worksheet image attached."}</div>`}
+      <div class="question-image-actions">
+        <button type="button" class="btn secondary" onclick="openCropEditor(${i})">✂️ ${q.visual_data_url?"Adjust image":"Choose image area"}</button>
+        ${q.visual_data_url?`<button type="button" class="btn ghost" onclick="removeQuestionImageDirect(${i})">Remove image</button>`:""}
+      </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
         <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div>
@@ -368,6 +567,17 @@ function questionEditor(q,i){
     </div>
   </details>`;
 }
+window.removeQuestionImageDirect = i => {
+  syncEditors();
+  const q=state.draft.questions[i];
+  q.visual_data_url="";
+  q.needs_visual=false;
+  q.visual_user_box=null;
+  q.visual_user_adjusted=false;
+  renderReview();
+  setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+};
+
 function syncEditors(){
   document.querySelectorAll("[data-i]").forEach(card=>{
     const i=+card.dataset.i, q=state.draft.questions[i];
@@ -380,7 +590,7 @@ function syncEditors(){
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question"});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false});
   renderReview();
 };
 
