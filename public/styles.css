@@ -11,3 +11,6 @@
 @media(max-width:650px){
   .question-visual img,.student-question-visual img{max-height:340px}
 }
+
+
+.time-answer{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:end;max-width:420px;margin:0 auto}.time-answer .field{margin:0}.time-answer input{text-align:center;font-size:24px;font-weight:900;letter-spacing:.04em}.time-colon{font-size:34px;font-weight:900;line-height:48px;color:var(--navy);padding-bottom:1px}.student-question-visual img,.question-visual img{width:100%;height:auto;max-height:none;object-fit:contain}.student-question-visual{overflow:auto;-webkit-overflow-scrolling:touch;background:#fff;border:1px solid var(--line);border-radius:16px;padding:8px}.student-question-visual img{min-width:100%;display:block}@media(max-width:650px){.time-answer{gap:7px}.time-answer input{font-size:22px;padding:13px 8px}.time-colon{font-size:30px}}
