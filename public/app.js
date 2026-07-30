@@ -2,6 +2,7 @@ const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
 const state = {
   files: [],
+  sourceImages: [],
   draft: null,
   homework: null,
   studentName: "",
@@ -143,6 +144,7 @@ window.openLastResults = () => {
 
 function renderUpload(){
   state.files = [];
+  state.sourceImages = [];
   app.innerHTML = shell(`
     <section class="mobile-page-head">
       <span class="step-chip">Step 1 of 3</span>
@@ -181,7 +183,7 @@ function renderUpload(){
     </div>
   `, true);
   $("#cameraPages").addEventListener("change", e => handleFiles(e, true));
-  $("#galleryPages").addEventListener("change", e => handleFiles(e, false));
+  $("#galleryPages").addEventListener("change", e => handleFiles(e, true));
   $("#extractBtn").addEventListener("click", extractHomework);
 }
 
@@ -232,6 +234,40 @@ async function imageToJpegDataURL(file){
   return canvas.toDataURL("image/jpeg",0.86);
 }
 
+async function cropVisualFromDataURL(dataUrl,bbox){
+  if(!Array.isArray(bbox) || bbox.length!==4 || bbox.every(v=>Number(v)===0)) return "";
+  const img=await new Promise((resolve,reject)=>{
+    const image=new Image(); image.onload=()=>resolve(image); image.onerror=reject; image.src=dataUrl;
+  });
+  let [x,y,w,h]=bbox.map(Number);
+  x=Math.max(0,Math.min(1000,x)); y=Math.max(0,Math.min(1000,y));
+  w=Math.max(1,Math.min(1000-x,w)); h=Math.max(1,Math.min(1000-y,h));
+  const pad=25;
+  x=Math.max(0,x-pad); y=Math.max(0,y-pad); w=Math.min(1000-x,w+pad*2); h=Math.min(1000-y,h+pad*2);
+  const sx=Math.round(img.naturalWidth*x/1000), sy=Math.round(img.naturalHeight*y/1000);
+  const sw=Math.max(1,Math.round(img.naturalWidth*w/1000)), sh=Math.max(1,Math.round(img.naturalHeight*h/1000));
+  const maxSide=760, scale=Math.min(1,maxSide/Math.max(sw,sh));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(sw*scale)); canvas.height=Math.max(1,Math.round(sh*scale));
+  const ctx=canvas.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  return canvas.toDataURL("image/jpeg",0.78);
+}
+
+async function attachQuestionVisuals(draft){
+  for(const q of draft.questions||[]){
+    const pageIndex=Number(q.page_index);
+    if(q.needs_visual && state.sourceImages[pageIndex]){
+      try{ q.visual_data_url=await cropVisualFromDataURL(state.sourceImages[pageIndex],q.visual_bbox); }
+      catch{ q.visual_data_url=state.sourceImages[pageIndex]; }
+    } else {
+      q.visual_data_url="";
+    }
+  }
+  return draft;
+}
+
 async function extractHomework(){
   if (!state.files.length) return;
   app.innerHTML = shell(`
@@ -255,10 +291,13 @@ async function extractHomework(){
       if(status[0]) status[0].innerHTML=`✓ <span>Prepared page ${i+1} of ${state.files.length}</span>`;
       images.push(await imageToJpegDataURL(state.files[i]));
     }
+    state.sourceImages=images;
     const status=document.querySelectorAll(".processing-list div");
     status[0]?.classList.remove("active"); status[1]?.classList.add("active");
     state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images})});
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
+    status[1]?.classList.remove("active"); status[2]?.classList.add("active");
+    state.draft=await attachQuestionVisuals(state.draft);
     renderReview();
   } catch(e){
     app.innerHTML = shell(`
@@ -296,6 +335,8 @@ function questionEditor(q,i){
   return `<details class="question-accordion" data-i="${i}" ${i===0?"open":""}>
     <summary><span class="question-number">${i+1}</span><span class="summary-copy"><strong>${esc(q.prompt||"Untitled question")}</strong><small>${esc(q.topic||"Maths")} · Answer: ${esc(String(q.answer||"Not set"))}</small></span><span class="chevron">⌄</span></summary>
     <div class="question-form">
+      <div class="question-source-row"><span class="pill">${esc(q.source_label||`Page ${(q.page_index??0)+1}`)}</span>${q.needs_visual?`<span class="pill orange">Visual question</span>`:""}</div>
+      ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>Image from the worksheet</figcaption></figure>` : ""}
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
         <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div>
@@ -321,7 +362,7 @@ function syncEditors(){
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:""});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question"});
   renderReview();
 };
 
@@ -330,17 +371,31 @@ window.publishHomework = async () => {
   const title=$("#title").value.trim() || "Year 4 Maths";
   const topic=$("#topic").value.trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
-  if (state.draft.questions.some(q=>!q.prompt.trim() || String(q.answer).trim()==="")) return alert("Every question needs wording and a correct answer.");
+  if (state.draft.questions.some(q=>!String(q.prompt||"").trim() || String(q.answer??"").trim()==="")) return alert("Every question needs wording and a correct answer.");
+
+  const button=document.querySelector(".review-publish .btn");
+  if(button){button.disabled=true;button.textContent="Publishing…";}
   try {
-    const result = await api("/api/homeworks", {method:"POST", body:JSON.stringify({
+    const payload={
       title, topic, year_group:"Year 4",
       questions:state.draft.questions,
-      settings:{hints:true, mastery:true, challenge:true}
-    })});
+      settings:{hints:true, mastery:true, challenge:true, source_pages:state.draft.page_count||state.sourceImages.length}
+    };
+    const payloadBytes=new Blob([JSON.stringify(payload)]).size;
+    if(payloadBytes>4_500_000) throw new Error("This homework is too large to publish because it contains several detailed images. Remove unnecessary visual questions or publish fewer pages at once.");
+    const result = await api("/api/homeworks", {method:"POST", body:JSON.stringify(payload)});
     state.homework={...result,title,topic,questions:state.draft.questions};
     localStorage.setItem("numera:lastHomework", result.id);
     location.hash="#/published";
-  } catch(e){ alert(e.message); }
+  } catch(e){
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip error-chip">Publish failed</span><h1>The homework was not saved</h1><p class="muted">Your reviewed questions are still in this browser.</p></section>
+      <div class="card extraction-error"><div class="mascot">🛠️</div><p><strong>${esc(e.message)}</strong></p><div class="photo-help"><div>• Check the D1 binding is named DB</div><div>• Confirm the homeworks table exists</div><div>• Try publishing fewer image-based questions</div></div></div>
+      <button class="btn primary block" onclick="renderReview()">Return to questions</button>
+    `,true);
+  } finally {
+    if(button){button.disabled=false;button.textContent="Publish homework";}
+  }
 };
 
 function renderPublished(){
@@ -435,6 +490,7 @@ function renderQuestion(){
       <button class="btn voice-btn" onclick="readCurrentQuestion()">▶ Read question</button>
     </div>
     <div class="card">
+      ${q.visual_data_url ? `<figure class="student-question-visual"><img src="${q.visual_data_url}" alt="Diagram for this question"></figure>` : ""}
       <div class="question-text">${formatMath(q.prompt)}</div>
       ${body}
       <button class="btn primary block" style="margin-top:18px" onclick="checkAnswer()">Check answer</button>
