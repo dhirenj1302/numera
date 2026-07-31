@@ -149,3 +149,77 @@
   .crop-editor-actions .btn.block{grid-column:auto}
   .crop-image-wrap>img{max-height:62vh}
 }
+
+
+.teacher-check-card{
+  margin:12px 0;
+  padding:14px;
+  border:1px solid #fedf89;
+  border-radius:16px;
+  background:#fffaeb;
+}
+.teacher-check-card strong{display:block;color:#93370d}
+.teacher-check-card p{margin:6px 0 10px;color:#7a2e0e;font-size:13px;line-height:1.45}
+.visual-working{
+  margin:9px 0;
+  padding:10px;
+  border-radius:12px;
+  background:#fff;
+  border:1px solid #fecdca;
+  font-size:13px;
+}
+.visual-working span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:800;margin-bottom:4px}
+.confirm-check{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:#344054}
+.confirm-check input{width:20px;height:20px;margin:0;flex:0 0 auto}
+
+.drawing-answer{display:grid;gap:10px}
+.drawing-instruction{
+  padding:11px 13px;
+  border-radius:13px;
+  background:var(--purple-soft);
+  color:var(--purple);
+  font-weight:700;
+  font-size:13px;
+}
+.drawing-canvas-wrap{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  border:2px solid #d9d1ff;
+  border-radius:16px;
+  background:#fff;
+  touch-action:none;
+}
+.drawing-canvas-wrap img{
+  display:block;
+  width:100%;
+  height:auto;
+  max-height:62vh;
+  object-fit:contain;
+  pointer-events:none;
+}
+.drawing-canvas-wrap canvas{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  touch-action:none;
+  cursor:crosshair;
+}
+.drawing-tools{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+
+
+.saved-confirmation{
+  display:inline-flex;
+  align-items:center;
+  margin-top:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  background:var(--green-soft);
+  color:var(--green-dark);
+  font-size:13px;
+  font-weight:800;
+}
