@@ -1,41 +1,4 @@
-export async function onRequest(context) {
-  if (context.request.method === "GET") return getHomework(context);
-  if (context.request.method === "POST") return createHomework(context);
-  return Response.json({error:"Method not allowed"},{status:405});
-}
-
-async function createHomework(context){
-  try{
-    if(!context.env.DB) return Response.json({error:"Cloudflare D1 binding DB is missing from Production."},{status:503});
-    const raw=await context.request.text();
-    if(raw.length>5_500_000) return Response.json({error:"Homework payload is too large to store. Reduce the number or size of worksheet visuals."},{status:413});
-    let body;
-    try{body=JSON.parse(raw)}catch{return Response.json({error:"The publish request was not valid JSON."},{status:400});}
-    if(!Array.isArray(body.questions) || !body.questions.length) return Response.json({error:"At least one question is required."},{status:400});
-    const invalid=body.questions.findIndex(q=>!String(q.prompt||"").trim() || String(q.answer??"").trim()==="");
-    if(invalid>=0) return Response.json({error:`Question ${invalid+1} needs both wording and a correct answer.`},{status:400});
-
-    const id=crypto.randomUUID().slice(0,8).toUpperCase();
-    const questionsJson=JSON.stringify(body.questions);
-    const settingsJson=JSON.stringify(body.settings||{});
-    await context.env.DB.prepare(`INSERT INTO homeworks (id,title,year_group,topic,questions_json,settings_json) VALUES (?,?,?,?,?,?)`)
-      .bind(id,body.title||"Year 4 Maths",body.year_group||"Year 4",body.topic||"Mixed maths",questionsJson,settingsJson).run();
-    return Response.json({id});
-  }catch(e){
-    return Response.json({error:`Could not save homework to D1: ${e.message}`},{status:500});
-  }
-}
-
-async function getHomework(context){
-  try{
-    if(!context.env.DB) return Response.json({error:"Cloudflare D1 binding DB is missing from Production."},{status:503});
-    const id=new URL(context.request.url).searchParams.get("id");
-    if(!id) return Response.json({error:"Homework ID is required."},{status:400});
-    const row=await context.env.DB.prepare(`SELECT * FROM homeworks WHERE id=?`).bind(id).first();
-    if(!row) return Response.json({error:"Homework not found."},{status:404});
-    return Response.json({
-      id:row.id,title:row.title,year_group:row.year_group,topic:row.topic,
-      questions:JSON.parse(row.questions_json),settings:JSON.parse(row.settings_json),created_at:row.created_at
-    });
-  }catch(e){return Response.json({error:`Could not load homework: ${e.message}`},{status:500});}
-}
+export async function onRequest(context){if(context.request.method==="GET")return get(context);if(context.request.method==="POST")return create(context);return Response.json({error:"Method not allowed"},{status:405});}
+const json=(b,i={})=>Response.json(b,{...i,headers:{"Cache-Control":"no-store",...(i.headers||{})}});
+async function create(c){try{const b=await c.request.json();if(!b.questions?.length)return json({error:"At least one question is required."},{status:400});const id=crypto.randomUUID().slice(0,8).toUpperCase();await c.env.DB.prepare(`INSERT INTO homeworks (id,title,year_group,topic,questions_json,settings_json) VALUES (?,?,?,?,?,?)`).bind(id,b.title||"Year 4 Maths",b.year_group||"Year 4",b.topic||"Mixed maths",JSON.stringify(b.questions),JSON.stringify(b.settings||{})).run();return json({id});}catch(err){return json({error:err.message},{status:500});}}
+async function get(c){try{const u=new URL(c.request.url);if(u.searchParams.get("list")==="1"){const {results=[]}=await c.env.DB.prepare(`SELECT h.id,h.title,h.year_group,h.topic,h.questions_json,h.created_at,COUNT(s.id) submission_count FROM homeworks h LEFT JOIN submissions s ON s.homework_id=h.id GROUP BY h.id ORDER BY h.created_at DESC LIMIT 100`).all();return json(results.map(r=>({id:r.id,title:r.title,year_group:r.year_group,topic:r.topic,question_count:JSON.parse(r.questions_json||"[]").length,submission_count:Number(r.submission_count)||0,created_at:r.created_at})));}const id=u.searchParams.get("id");if(!id)return json({error:"Homework ID is required."},{status:400});const r=await c.env.DB.prepare(`SELECT * FROM homeworks WHERE id=?`).bind(id).first();if(!r)return json({error:"Homework not found."},{status:404});return json({id:r.id,title:r.title,year_group:r.year_group,topic:r.topic,questions:JSON.parse(r.questions_json),settings:JSON.parse(r.settings_json),created_at:r.created_at});}catch(err){return json({error:err.message},{status:500});}}

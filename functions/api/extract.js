@@ -12,9 +12,9 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox"],
+        required:["type","prompt","answer","options","hint","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
         properties:{
-          type:{type:"string",enum:["number","time","multiple_choice"]},
+          type:{type:"string",enum:["number","time","multiple_choice","drawing","multipart"]},
           prompt:{type:"string"},
           answer:{type:"string"},
           options:{type:"array",items:{type:"string"}},
@@ -29,7 +29,9 @@ const pageSchema = {
             minItems:4,
             maxItems:4,
             items:{type:"number"}
-          }
+          },
+          requires_teacher_check:{type:"boolean"},
+          answer_working:{type:"string"}, answer_unit:{type:"string"}, parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
         }
       }
     }
@@ -58,10 +60,11 @@ For every complete visible question:
 4. Add one similar practice question and answer.
 5. Set needs_visual=true when the child must see a grid, shape, diagram, graph, pictogram, number line, table, clock, fraction model or other picture to answer.
 6. When needs_visual=true, give visual_bbox as [x,y,width,height] using coordinates from 0 to 1000 across the page. Include the whole relevant visual and any labels needed to understand it. Add a little surrounding context. If no visual is needed, use [0,0,0,0].
-7. Use type=time whenever the correct answer is a clock time written with a colon, such as 3:07 or 14:35. Store the answer in H:MM or HH:MM format. Use type=number for other typed answers and multiple_choice only where printed choices exist or are genuinely useful.
+7. If a printed question contains separately answerable parts such as (a) and (b), use type=multipart and create one parts item for each printed part in order. Each part needs its own prompt, answer, answer_unit and type. Do not merge separate answers. Use type=time whenever the correct answer is a clock time written with a colon, such as 3:07 or 14:35. Store the answer in H:MM or HH:MM format. Use type=drawing where the pupil must draw a line, line of symmetry, matching connection, route, reflection line or other answer directly on the diagram. For drawing questions, set answer to "teacher review", leave practice_prompt and practice_answer empty, and describe the expected drawing briefly in answer_working. Use type=number for other typed answers and multiple_choice only where printed choices exist or are genuinely useful.
 8. A question referring to a pictogram, graph, table, grid, clock, shape, diagram, number line, chart or picture MUST have needs_visual=true. For pictograms, visual_bbox must include the complete pictogram, all row labels and the entire key. For graphs and diagrams, include every axis, label, dimension and legend needed to answer. Prefer a box that is slightly too large rather than too small.
-9. If any item is too unclear, omit it and explain briefly in warning.
-10. Return questions in exact top-to-bottom page order. Do not include pupil names.`;
+9. For every pictogram, chart, table or image-counting question, set requires_teacher_check=true. Write the complete counting calculation in answer_working, for example "Age 10: 9 full symbols × 2 children = 18". Count symbols one by one and apply the key explicitly. For ordinary text-only arithmetic set requires_teacher_check=false. Drawing questions also require teacher check.
+10. If any item is too unclear, omit it and explain briefly in warning.
+11. Set answer_unit to the unit requested by the printed answer line, such as ml, cm, minutes, children or £; use an empty string if unitless. Do not include the unit inside a numeric answer. 12. Return questions in exact top-to-bottom page order. Do not include pupil names.`;
 
   const response=await fetch("https://api.openai.com/v1/responses",{
     method:"POST",
