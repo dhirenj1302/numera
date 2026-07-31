@@ -12,6 +12,7 @@ const state = {
   phase: "answer",
   practiceQuestion: null,
   pendingSubmission: null,
+  multipartAnswers: {},
   voiceEnabled: localStorage.getItem("numera:voiceEnabled") === "true"
 };
 
@@ -93,6 +94,7 @@ function router() {
   const params = new URLSearchParams(query || "");
   if (path === "/") return renderLanding();
   if (path === "/teacher") return renderTeacher();
+  if (path === "/history") return renderHomeworkHistory();
   if (path === "/create") return renderUpload();
   if (path === "/review") return renderReview();
   if (path === "/published") return renderPublished();
@@ -141,6 +143,9 @@ function renderTeacher(){
       <button class="action-card" onclick="openLastResults()">
         <span class="icon">📊</span><span><strong>Latest results</strong><br><span class="muted small">Completion and score upgrades</span></span>
       </button>
+      <button class="action-card" onclick="location.hash='#/history'">
+        <span class="icon">🗂️</span><span><strong>Past homeworks</strong><br><span class="muted small">Open previous homework and class results</span></span>
+      </button>
     </div>
     <div class="notice" style="margin-top:24px"><strong>Prototype privacy:</strong> use only Aaryan’s first name and avoid uploading pages containing pupil information.</div>
   `, true);
@@ -150,6 +155,15 @@ window.openLastResults = () => {
   if (!id) return alert("Publish a homework first.");
   location.hash = `#/results?id=${id}`;
 };
+
+
+async function renderHomeworkHistory(){
+  app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading past homeworks…</h2></div>`,true);
+  try{
+    const items=await api(`/api/homeworks?list=1&t=${Date.now()}`);
+    app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Teacher library</span><h1>Past homeworks</h1><p class="muted">Open a homework to see everyone who completed it.</p></section><div class="history-list">${items.length?items.map(h=>`<article class="history-card"><div><span class="pill">${esc(h.year_group||"Year 4")}</span><h3>${esc(h.title)}</h3><p class="muted">${esc(h.topic||"Mixed maths")} · ${h.question_count} questions · ${h.submission_count} completed</p><p class="small muted">Created ${new Date(h.created_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p></div><div class="history-actions"><a class="btn primary" href="#/results?id=${h.id}">View results</a><a class="btn secondary" href="#/play?id=${h.id}">Open homework</a></div></article>`).join(""):`<div class="empty card">No published homeworks yet.</div>`}</div><a class="btn green block" href="#/create">＋ Create new homework</a>`,true);
+  }catch(err){app.innerHTML=shell(`<div class="card"><h2>Could not load past homeworks</h2><p>${esc(err.message)}</p></div>`,true);}
+}
 
 function renderUpload(){
   state.files = [];
@@ -557,9 +571,11 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
+      <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
+      ${q.type==="multipart"?`<div class="multipart-editor"><div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div></div>`).join("")}</div>`:""}
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
       ${(q.requires_teacher_check || q.type==="drawing") ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
@@ -585,6 +601,9 @@ window.removeQuestionImageDirect = i => {
   setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
 };
 
+window.addQuestionPart=i=>{syncEditors();const q=state.draft.questions[i];q.type="multipart";q.parts||=[];const n=q.parts.length;q.parts.push({label:String.fromCharCode(97+n),prompt:"",answer:"",answer_unit:"",type:"number"});renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
+window.deleteQuestionPart=(i,pi)=>{syncEditors();const q=state.draft.questions[i];q.parts.splice(pi,1);q.parts.forEach((p,n)=>p.label=String.fromCharCode(97+n));renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
+
 function syncEditors(){
   document.querySelectorAll("[data-i]").forEach(card=>{
     const i=+card.dataset.i, q=state.draft.questions[i];
@@ -596,12 +615,13 @@ function syncEditors(){
           ? el.checked
           : el.value;
     });
+    if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>q.parts[pi][el.dataset.partK]=el.value);});}
   });
 }
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false,answer_unit:"",parts:[]});
   renderReview();
 };
 
@@ -610,7 +630,7 @@ window.publishHomework = async () => {
   const title=$("#title").value.trim() || "Year 4 Maths";
   const topic=$("#topic").value.trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
-  if (state.draft.questions.some(q=>!String(q.prompt||"").trim() || (q.type!=="drawing" && String(q.answer??"").trim()===""))) return alert("Every automatically marked question needs wording and a correct answer.");
+  if(state.draft.questions.some(q=>{if(!String(q.prompt||"").trim())return true;if(q.type==="drawing")return false;if(q.type==="multipart")return !(q.parts?.length)||q.parts.some(p=>!String(p.prompt||"").trim()||!String(p.answer??"").trim());return String(q.answer??"").trim()==="";})) return alert("Every question part needs wording and a correct answer.");
   const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || q.type==="drawing") && !q.teacher_confirmed);
   if(unchecked>=0){
     alert(`Please open Question ${unchecked+1} and confirm that you have checked its visual and answer.`);
@@ -657,7 +677,8 @@ function renderPublished(){
     <div class="card">
       <label>Student / parent link</label>
       <div class="row" style="margin-top:8px"><input id="studentLink" readonly value="${student}"><button class="btn secondary" onclick="copyField('studentLink')">Copy</button></div>
-      <button class="btn green block" style="margin-top:14px" onclick="shareLink('${student.replaceAll("'","")}')">Share link</button>
+      <button class="btn green block" style="margin-top:14px" onclick="shareHomeworkWhatsApp('${student.replaceAll("'","")}')">Share with parents on WhatsApp</button>
+      <button class="btn secondary block" style="margin-top:10px" onclick="shareLink('${student.replaceAll("'","")}')">More sharing options</button>
     </div>
     <div class="card">
       <label>Teacher results link</label>
@@ -671,6 +692,7 @@ window.shareLink=async url=>{
   if(navigator.share) await navigator.share({title:"Numera homework",text:"Here is today’s Numera maths homework.",url});
   else {await navigator.clipboard.writeText(url); alert("Link copied.");}
 };
+window.shareHomeworkWhatsApp=url=>{const u=`https://wa.me/?text=${encodeURIComponent(`Here is today’s Numera maths homework:\n${url}`)}`;const opened=window.open(u,"_blank","noopener,noreferrer");if(!opened){navigator.clipboard?.writeText(url);alert("The link was copied. Paste it into WhatsApp.");}};
 
 async function loadHomework(id, mode){
   if(!id) return renderLanding();
@@ -743,6 +765,11 @@ function readTimeAnswer(prefix=""){
 
 
 const drawingState = {strokes:[],active:null};
+
+function answerWithUnitMarkup(id,unit){return `<div class="answer-with-unit"><input id="${id}" inputmode="decimal" autocomplete="off" placeholder="Type your answer">${unit?`<span class="answer-unit">${esc(unit)}</span>`:""}</div>`;}
+function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
+function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;v.push(`${Number(hr)}:${mn.padStart(2,"0")}`);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
+function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>isCorrect(g[i],p.answer));}
 
 function drawingMarkup(q){
   return `<div class="drawing-answer">
@@ -840,9 +867,11 @@ function renderQuestion(){
     ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
     : q.type==="drawing"
       ? drawingMarkup(q)
-      : isTimeQuestion(q)
-        ? timeAnswerMarkup("")
-        : `<div class="field"><label>Your answer</label><input id="answerInput" inputmode="decimal" autocomplete="off" placeholder="Type your answer"></div>`;
+      : q.type==="multipart"
+        ? multipartMarkup(q)
+        : isTimeQuestion(q)
+          ? timeAnswerMarkup("")
+          : answerWithUnitMarkup("answerInput",q.answer_unit||"");
   app.innerHTML=shell(`
     <div class="row between"><strong>Question ${state.index+1} of ${n}</strong><span class="pill">${esc(q.topic||state.homework.topic)}</span></div>
     <div class="progress" style="margin:12px 0"><div style="width:${pct}%"></div></div>
@@ -869,6 +898,7 @@ window.selectOption=v=>{state.selected=v;renderQuestion();};
 function getStudentAnswer(q){
   if(q.type==="multiple_choice") return state.selected;
   if(q.type==="drawing") return drawingAnswer();
+  if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("");
   return ($("#answerInput")?.value||"").trim();
 }
@@ -880,7 +910,7 @@ function normalise(v){
 function isCorrect(given,answer){return normalise(given)===normalise(answer);}
 window.checkAnswer=()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null) return alert("Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given===null) return alert(q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const record={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,requires_teacher_review:true,drawing_preview:JSON.parse(given).preview};
@@ -898,10 +928,10 @@ window.checkAnswer=()=>{
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false};
   if(!state.attempts[state.index]){
     record.first_answer=given;
-    record.first_correct=isCorrect(given,q.answer);
+    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
-  if(isCorrect(given,q.answer)){
+  if(q.type==="multipart"?multipartIsCorrect(given,q):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
   } else renderIncorrect();
@@ -917,7 +947,7 @@ window.showHint=()=>{
       <h2>Here’s a clue</h2>
       <div class="feedback hint">${esc(hint)}</div>
       ${voiceControl()}
-      <button class="btn green block" style="margin-top:10px" onclick="renderQuestion()">Try the question</button>
+      <button class="btn green block" style="margin-top:10px" onclick="renderQuestion()">← Back to the question</button>
     </div>
   `,true);
   if (state.voiceEnabled) setTimeout(() => speak(`Here is a clue. ${hint}`), 120);
