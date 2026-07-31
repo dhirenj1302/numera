@@ -11,6 +11,7 @@ const state = {
   selected: null,
   phase: "answer",
   practiceQuestion: null,
+  pendingSubmission: null,
   voiceEnabled: localStorage.getItem("numera:voiceEnabled") === "true"
 };
 
@@ -556,10 +557,16 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
+      ${(q.requires_teacher_check || q.type==="drawing") ? `<div class="teacher-check-card">
+        <strong>Teacher verification required</strong>
+        <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
+        ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
+        <label class="confirm-check"><input type="checkbox" data-k="teacher_confirmed" ${q.teacher_confirmed?"checked":""}> I have checked this question and answer</label>
+      </div>` : ""}
       <div class="field"><label>Helpful hint</label><textarea data-k="hint" rows="2">${esc(q.hint||"")}</textarea></div>
       <div class="field"><label>Worked explanation</label><textarea data-k="explanation" rows="3">${esc(q.explanation||"")}</textarea></div>
       <details class="advanced-fields"><summary>More teaching settings</summary><div class="field"><label>Topic</label><input data-k="topic" value="${esc(q.topic||state.draft.topic||"Mixed maths")}"></div><div class="field"><label>Similar practice question</label><input data-k="practice_prompt" value="${esc(q.practice_prompt||"")}"></div><div class="field"><label>Practice answer</label><input data-k="practice_answer" value="${esc(String(q.practice_answer??""))}"></div></details>
@@ -583,14 +590,18 @@ function syncEditors(){
     const i=+card.dataset.i, q=state.draft.questions[i];
     card.querySelectorAll("[data-k]").forEach(el=>{
       const k=el.dataset.k;
-      q[k] = k==="options" ? el.value.split(",").map(x=>x.trim()).filter(Boolean) : el.value;
+      q[k] = k==="options"
+        ? el.value.split(",").map(x=>x.trim()).filter(Boolean)
+        : el.type==="checkbox"
+          ? el.checked
+          : el.value;
     });
   });
 }
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false});
   renderReview();
 };
 
@@ -599,7 +610,13 @@ window.publishHomework = async () => {
   const title=$("#title").value.trim() || "Year 4 Maths";
   const topic=$("#topic").value.trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
-  if (state.draft.questions.some(q=>!String(q.prompt||"").trim() || String(q.answer??"").trim()==="")) return alert("Every question needs wording and a correct answer.");
+  if (state.draft.questions.some(q=>!String(q.prompt||"").trim() || (q.type!=="drawing" && String(q.answer??"").trim()===""))) return alert("Every automatically marked question needs wording and a correct answer.");
+  const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || q.type==="drawing") && !q.teacher_confirmed);
+  if(unchecked>=0){
+    alert(`Please open Question ${unchecked+1} and confirm that you have checked its visual and answer.`);
+    document.querySelector(`[data-i="${unchecked}"]`)?.setAttribute("open","");
+    return;
+  }
 
   const button=document.querySelector(".review-publish .btn");
   if(button){button.disabled=true;button.textContent="Publishing…";}
@@ -724,14 +741,108 @@ function readTimeAnswer(prefix=""){
   return `${h}:${String(m).padStart(2,"0")}`;
 }
 
+
+const drawingState = {strokes:[],active:null};
+
+function drawingMarkup(q){
+  return `<div class="drawing-answer">
+    <div class="drawing-instruction">Draw your answer directly on the image. You can draw more than one line.</div>
+    <div class="drawing-canvas-wrap">
+      <img id="drawingBaseImage" src="${q.visual_data_url||""}" alt="Diagram for drawing question">
+      <canvas id="drawingCanvas" aria-label="Drawing answer area"></canvas>
+    </div>
+    <div class="drawing-tools">
+      <button class="btn secondary" type="button" onclick="undoDrawingLine()">↶ Undo</button>
+      <button class="btn ghost" type="button" onclick="clearDrawingLines()">Clear</button>
+    </div>
+    <div class="small muted">This drawing will be saved for a teacher or parent to review.</div>
+  </div>`;
+}
+
+function initialiseDrawingCanvas(){
+  const img=$("#drawingBaseImage"), canvas=$("#drawingCanvas");
+  if(!img || !canvas) return;
+  const size=()=>{
+    const rect=img.getBoundingClientRect();
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=Math.max(1,Math.round(rect.width*dpr));
+    canvas.height=Math.max(1,Math.round(rect.height*dpr));
+    canvas.style.width=`${rect.width}px`;
+    canvas.style.height=`${rect.height}px`;
+    drawStoredLines();
+  };
+  if(img.complete) size(); else img.onload=size;
+  canvas.addEventListener("pointerdown",e=>{
+    e.preventDefault();
+    const p=drawingPoint(e,canvas);
+    drawingState.active={start:p,end:p};
+    canvas.setPointerCapture?.(e.pointerId);
+    drawStoredLines();
+  });
+  canvas.addEventListener("pointermove",e=>{
+    if(!drawingState.active) return;
+    drawingState.active.end=drawingPoint(e,canvas);
+    drawStoredLines();
+  });
+  canvas.addEventListener("pointerup",e=>{
+    if(!drawingState.active) return;
+    const line=drawingState.active;
+    drawingState.active=null;
+    const distance=Math.hypot(line.end.x-line.start.x,line.end.y-line.start.y);
+    if(distance>.025) drawingState.strokes.push(line);
+    drawStoredLines();
+  });
+}
+
+function drawingPoint(e,canvas){
+  const rect=canvas.getBoundingClientRect();
+  return {
+    x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),
+    y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))
+  };
+}
+
+function drawStoredLines(){
+  const canvas=$("#drawingCanvas");
+  if(!canvas) return;
+  const ctx=canvas.getContext("2d");
+  const dpr=canvas.width/Math.max(1,canvas.getBoundingClientRect().width);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
+  ctx.strokeStyle="#6543d9";
+  ctx.lineWidth=5*dpr;
+  const lines=[...drawingState.strokes,...(drawingState.active?[drawingState.active]:[])];
+  for(const line of lines){
+    ctx.beginPath();
+    ctx.moveTo(line.start.x*canvas.width,line.start.y*canvas.height);
+    ctx.lineTo(line.end.x*canvas.width,line.end.y*canvas.height);
+    ctx.stroke();
+  }
+}
+
+window.undoDrawingLine=()=>{drawingState.strokes.pop();drawStoredLines();};
+window.clearDrawingLines=()=>{drawingState.strokes=[];drawingState.active=null;drawStoredLines();};
+
+function drawingAnswer(){
+  if(!drawingState.strokes.length) return "";
+  const canvas=$("#drawingCanvas");
+  return JSON.stringify({
+    strokes:drawingState.strokes,
+    preview:canvas?.toDataURL("image/png")||""
+  });
+}
+
 function renderQuestion(){
   const q=state.homework.questions[state.index], n=state.homework.questions.length;
   const pct=(state.index/n)*100;
   const body=q.type==="multiple_choice"
     ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
-    : isTimeQuestion(q)
-      ? timeAnswerMarkup("")
-      : `<div class="field"><label>Your answer</label><input id="answerInput" inputmode="decimal" autocomplete="off" placeholder="Type your answer"></div>`;
+    : q.type==="drawing"
+      ? drawingMarkup(q)
+      : isTimeQuestion(q)
+        ? timeAnswerMarkup("")
+        : `<div class="field"><label>Your answer</label><input id="answerInput" inputmode="decimal" autocomplete="off" placeholder="Type your answer"></div>`;
   app.innerHTML=shell(`
     <div class="row between"><strong>Question ${state.index+1} of ${n}</strong><span class="pill">${esc(q.topic||state.homework.topic)}</span></div>
     <div class="progress" style="margin:12px 0"><div style="width:${pct}%"></div></div>
@@ -740,18 +851,24 @@ function renderQuestion(){
       <button class="btn voice-btn" onclick="readCurrentQuestion()">▶ Read question</button>
     </div>
     <div class="card">
-      ${q.visual_data_url ? `<figure class="student-question-visual"><img src="${q.visual_data_url}" alt="Diagram for this question"></figure>` : ""}
+      ${q.visual_data_url && q.type!=="drawing" ? `<figure class="student-question-visual"><img src="${q.visual_data_url}" alt="Diagram for this question"></figure>` : ""}
       <div class="question-text">${formatMath(q.prompt)}</div>
       ${body}
       <button class="btn primary block" style="margin-top:18px" onclick="checkAnswer()">Check answer</button>
     </div>
     <button class="btn ghost block" onclick="showHint()">💡 Show a hint</button>
   `);
+  if(q.type==="drawing"){
+    drawingState.strokes=[];
+    drawingState.active=null;
+    setTimeout(initialiseDrawingCanvas,80);
+  }
   if (state.voiceEnabled) setTimeout(() => speak(`Question ${state.index + 1}. ${q.prompt}`), 120);
 }
 window.selectOption=v=>{state.selected=v;renderQuestion();};
 function getStudentAnswer(q){
   if(q.type==="multiple_choice") return state.selected;
+  if(q.type==="drawing") return drawingAnswer();
   if(isTimeQuestion(q)) return readTimeAnswer("");
   return ($("#answerInput")?.value||"").trim();
 }
@@ -764,7 +881,20 @@ function isCorrect(given,answer){return normalise(given)===normalise(answer);}
 window.checkAnswer=()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
   if(given===null) return alert("Enter a valid hour and minutes. Minutes must be between 00 and 59.");
-  if(given==="") return alert("Enter or choose an answer.");
+  if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
+  if(q.type==="drawing"){
+    const record={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,requires_teacher_review:true,drawing_preview:JSON.parse(given).preview};
+    state.attempts[state.index]=record;
+    app.innerHTML=shell(`
+      <div class="mission">
+        <div class="mascot">✏️</div>
+        <h1>Drawing saved</h1>
+        <div class="feedback learn">Your line drawing has been recorded. A teacher or parent can review it with the original diagram.</div>
+        <button class="btn green block" onclick="nextQuestion()">Next question</button>
+      </div>
+    `);
+    return;
+  }
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false};
   if(!state.attempts[state.index]){
     record.first_answer=given;
@@ -870,8 +1000,13 @@ async function finishHomework(){
   for(let i=0;i<total;i++){
     if(!state.attempts[i]) state.attempts[i]={question_index:i,first_answer:"",first_correct:false,retries:0,mastered:false,hint_used:false};
   }
-  const original=state.attempts.filter(a=>a.first_correct).length;
-  const mastery=state.attempts.filter(a=>a.first_correct||a.mastered).length;
+
+  const autoMarked=state.attempts.filter(a=>!a.requires_teacher_review);
+  const scoreTotal=Math.max(1,autoMarked.length);
+  const original=autoMarked.filter(a=>a.first_correct).length;
+  const mastery=autoMarked.filter(a=>a.first_correct||a.mastered).length;
+  const teacherReviewCount=state.attempts.filter(a=>a.requires_teacher_review).length;
+
   const topicStats={};
   state.homework.questions.forEach((q,i)=>{
     const t=q.topic||state.homework.topic;
@@ -881,21 +1016,108 @@ async function finishHomework(){
   });
   const strengths=Object.entries(topicStats).filter(([,v])=>v.ok/v.total>=.75).map(([k])=>k);
   const needs=Object.entries(topicStats).filter(([,v])=>v.ok/v.total<.75).map(([k])=>k);
-  try{
-    await api("/api/submissions",{method:"POST",body:JSON.stringify({
-      homework_id:state.homework.id,student_name:state.studentName,
-      original_score:original,mastery_score:mastery,total_questions:total,
-      attempts:state.attempts,strengths,needs_practice:needs
-    })});
-  }catch(e){console.error(e);}
-  renderComplete(original,mastery,total,strengths,needs);
+
+  // D1 should store answer metadata and drawing coordinates, not a large PNG data URL.
+  const safeAttempts=state.attempts.map(a=>{
+    const copy={...a};
+    delete copy.drawing_preview;
+    if(typeof copy.first_answer==="string" && copy.first_answer.startsWith("{")){
+      try{
+        const parsed=JSON.parse(copy.first_answer);
+        if(parsed?.strokes){
+          copy.first_answer=JSON.stringify({strokes:parsed.strokes});
+        }
+      }catch{}
+    }
+    return copy;
+  });
+
+  state.pendingSubmission={
+    payload:{
+      homework_id:state.homework.id,
+      student_name:state.studentName,
+      original_score:original,
+      mastery_score:mastery,
+      total_questions:scoreTotal,
+      attempts:safeAttempts,
+      strengths,
+      needs_practice:needs
+    },
+    summary:{original,mastery,scoreTotal,strengths,needs,teacherReviewCount}
+  };
+
+  localStorage.setItem("numera:pendingSubmission",JSON.stringify(state.pendingSubmission));
+  renderSavingResults();
+  await savePendingSubmission();
 }
-function renderComplete(original,mastery,total,strengths,needs){
+
+function renderSavingResults(){
+  app.innerHTML=shell(`
+    <div class="mission">
+      <div class="spinner"></div>
+      <h1>Saving your results…</h1>
+      <p class="muted">Keep this page open until Numera confirms the result has been recorded.</p>
+    </div>
+  `);
+}
+
+async function savePendingSubmission(){
+  if(!state.pendingSubmission) return;
+  try{
+    const result=await api("/api/submissions",{
+      method:"POST",
+      body:JSON.stringify(state.pendingSubmission.payload)
+    });
+    localStorage.removeItem("numera:pendingSubmission");
+    const s=state.pendingSubmission.summary;
+    state.pendingSubmission=null;
+    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id);
+  }catch(e){
+    renderSubmissionSaveError(e);
+  }
+}
+
+function renderSubmissionSaveError(error){
+  const message=error?.message||"The result could not be saved.";
+  app.innerHTML=shell(`
+    <section class="mobile-page-head">
+      <span class="step-chip error-chip">Results not saved</span>
+      <h1>We need to try saving again</h1>
+      <p class="muted">Your answers are still held safely on this device.</p>
+    </section>
+    <div class="card extraction-error">
+      <div class="camera-error-icon">☁️</div>
+      <h2>${esc(message)}</h2>
+      <p>The teacher dashboard will not update until this save succeeds.</p>
+      <button class="btn primary block" onclick="retrySubmissionSave()">Retry saving results</button>
+      <button class="btn secondary block" style="margin-top:10px" onclick="copySubmissionDebug()">Copy error details</button>
+    </div>
+  `);
+}
+
+window.retrySubmissionSave=async()=>{
+  renderSavingResults();
+  await savePendingSubmission();
+};
+
+window.copySubmissionDebug=async()=>{
+  const info={
+    homework_id:state.pendingSubmission?.payload?.homework_id,
+    student_name:state.pendingSubmission?.payload?.student_name,
+    payload_bytes:new Blob([JSON.stringify(state.pendingSubmission?.payload||{})]).size,
+    page:location.href
+  };
+  await navigator.clipboard.writeText(JSON.stringify(info,null,2));
+  alert("Submission details copied.");
+};
+
+function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId=""){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
   app.innerHTML=shell(`
     <div class="mission">
       <div class="confetti">🎉 ⭐ 🎉</div><h1>Great work, ${esc(state.studentName)}!</h1>
       <p>You improved your understanding by ${Math.max(0,mp-op)} percentage points.</p>
+      <span class="saved-confirmation">✓ Results saved to the teacher dashboard</span>
     </div>
     <div class="score-grid">
       <div class="score"><span>Original score</span><strong>${op}%</strong><span>${original}/${total}</span></div>
@@ -928,7 +1150,12 @@ window.shareTeacherResults = async () => {
 
 async function renderResults(){
   let submissions=[];
-  try{submissions=await api(`/api/submissions?homework_id=${encodeURIComponent(state.homework.id)}`);}catch(e){}
+  let resultsError="";
+  try{
+    submissions=await api(`/api/submissions?homework_id=${encodeURIComponent(state.homework.id)}&t=${Date.now()}`);
+  }catch(e){
+    resultsError=e.message||"Results could not be loaded.";
+  }
   const rows=submissions.map(s=>{
     const op=Math.round(s.original_score/s.total_questions*100), mp=Math.round(s.mastery_score/s.total_questions*100);
     const flag=mp<70?`<span class="pill orange">Needs support</span>`:op>90?`<span class="pill green">Needs challenge</span>`:`<span class="pill">On track</span>`;
@@ -938,7 +1165,8 @@ async function renderResults(){
   const avgO=complete?Math.round(submissions.reduce((a,s)=>a+s.original_score/s.total_questions*100,0)/complete):0;
   const avgM=complete?Math.round(submissions.reduce((a,s)=>a+s.mastery_score/s.total_questions*100,0)/complete):0;
   app.innerHTML=shell(`
-    <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><a class="btn secondary" href="#/play?id=${state.homework.id}">Open homework</a></div>
+    <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><div class="row wrap"><button class="btn secondary" onclick="renderResults()">↻ Refresh</button><a class="btn secondary" href="#/play?id=${state.homework.id}">Open homework</a></div></div>
+    ${resultsError?`<div class="notice"><strong>Results could not be loaded:</strong> ${esc(resultsError)}</div>`:""}
     <div class="grid two">
       <div class="score"><span>Completed</span><strong>${complete}</strong><span>students</span></div>
       <div class="score mastery"><span>Average upgrade</span><strong>+${Math.max(0,avgM-avgO)}</strong><span>percentage points</span></div>
