@@ -1073,6 +1073,10 @@ window.checkAnswer=()=>{
     renderCorrect(record.first_correct);
   } else renderIncorrect();
 };
+window.returnToCurrentQuestion = () => {
+  renderQuestion();
+};
+
 window.showHint=()=>{
   const q=state.homework.questions[state.index];
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:"",first_correct:false,retries:0,mastered:false,hint_used:true};
@@ -1084,7 +1088,7 @@ window.showHint=()=>{
       <h2>Here’s a clue</h2>
       <div class="feedback hint">${esc(hint)}</div>
       ${voiceControl()}
-      <button class="btn green block" style="margin-top:10px" onclick="renderQuestion()">← Back to the question</button>
+      <button class="btn green block" style="margin-top:10px" onclick="returnToCurrentQuestion()">← Back to the question</button>
     </div>
   `,true);
   if (state.voiceEnabled) setTimeout(() => speak(`Here is a clue. ${hint}`), 120);
