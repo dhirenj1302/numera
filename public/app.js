@@ -79,7 +79,7 @@ const shell = (content, back=false) => `
 <div class="app-shell">
   <header class="topbar">
     <div class="row">
-      ${back ? `<button class="btn ghost" onclick="history.back()">←</button>` : ""}
+      ${back ? `<button class="btn ghost" onclick="appBack()" aria-label="Go back">←</button>` : ""}
       <div><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></div>
     </div>
     <span class="pill green">Prototype</span>
@@ -87,6 +87,73 @@ const shell = (content, back=false) => `
   <main>${content}</main>
   <div class="footer-note">Every mistake is a step forward.</div>
 </div>`;
+
+
+const NUMERA_STACK_KEY = "numera:routeStack";
+
+function currentRoute(){
+  return location.hash || "#/";
+}
+
+function readRouteStack(){
+  try{
+    const stack=JSON.parse(sessionStorage.getItem(NUMERA_STACK_KEY)||"[]");
+    return Array.isArray(stack)?stack:[];
+  }catch{return [];}
+}
+
+function writeRouteStack(stack){
+  sessionStorage.setItem(NUMERA_STACK_KEY,JSON.stringify(stack.slice(-30)));
+}
+
+function rememberRoute(route){
+  const stack=readRouteStack();
+  if(stack[stack.length-1]!==route){
+    stack.push(route);
+    writeRouteStack(stack);
+  }
+}
+
+window.appBack = () => {
+  const stack=readRouteStack();
+  const now=currentRoute();
+
+  while(stack.length && stack[stack.length-1]===now) stack.pop();
+  const previous=stack.pop();
+  writeRouteStack(stack);
+
+  if(previous){
+    location.hash=previous;
+    return;
+  }
+
+  // A homework link may have been opened directly from WhatsApp.
+  // In that case, keep the user inside Numera rather than closing the app.
+  if(now.startsWith("#/play") || now.startsWith("#/results")){
+    location.hash="#/";
+  }else if(now!=="#/"){
+    location.hash="#/teacher";
+  }else{
+    location.hash="#/";
+  }
+};
+
+function installBackGuard(){
+  if(sessionStorage.getItem("numera:backGuardInstalled")==="1") return;
+  sessionStorage.setItem("numera:backGuardInstalled","1");
+
+  const initial=currentRoute();
+  // Put a safe Numera page immediately behind a directly opened deep link.
+  if(initial!=="#/"){
+    history.replaceState({numeraFallback:true},"","#/");
+    history.pushState({numeraRoute:true},"",initial);
+  }else{
+    history.replaceState({numeraRoute:true},"",initial);
+  }
+}
+
+installBackGuard();
+rememberRoute(currentRoute());
 
 function router() {
   const hash = location.hash || "#/";
@@ -102,7 +169,17 @@ function router() {
   if (path === "/results") return loadHomework(params.get("id"), "results");
   renderLanding();
 }
-window.addEventListener("hashchange", router);
+window.addEventListener("hashchange",()=>{
+  rememberRoute(currentRoute());
+  router();
+});
+window.addEventListener("popstate",()=>{
+  const route=currentRoute();
+  if(route==="#/" || !route){
+    rememberRoute("#/");
+    setTimeout(router,0);
+  }
+});
 
 function renderLanding(){
   app.innerHTML = shell(`
@@ -536,8 +613,56 @@ async function extractHomework(){
   }
 }
 
+
+function multipartMarkerCount(text=""){
+  const markers=String(text).match(/(?:^|\s|\n)\(?[a-f]\)[\s.:]/gi)
+    || String(text).match(/\([a-f]\)/gi)
+    || [];
+  return new Set(markers.map(x=>x.toLowerCase().replace(/[^a-f]/g,""))).size;
+}
+
+function normaliseMultipartQuestion(q){
+  q.parts=Array.isArray(q.parts)?q.parts:[];
+  if(q.parts.length>1){
+    q.type="multipart";
+    q.parts=q.parts.map((p,i)=>({
+      label:p.label||String.fromCharCode(97+i),
+      prompt:p.prompt||`Part ${String.fromCharCode(97+i)}`,
+      answer:String(p.answer??""),
+      answer_unit:p.answer_unit||"",
+      type:p.type||"number"
+    }));
+    return q;
+  }
+
+  const markerCount=multipartMarkerCount(q.prompt);
+  if(markerCount>1){
+    q.type="multipart";
+    q.multipart_incomplete=true;
+    while(q.parts.length<markerCount){
+      const i=q.parts.length;
+      q.parts.push({
+        label:String.fromCharCode(97+i),
+        prompt:`Part ${String.fromCharCode(97+i)} — check wording`,
+        answer:i===0?String(q.answer??""):"",
+        answer_unit:q.answer_unit||"",
+        type:isTimeQuestion(q)?"time":"number"
+      });
+    }
+  }
+  return q;
+}
+
+function normaliseHomeworkQuestions(homework){
+  if(homework?.questions){
+    homework.questions=homework.questions.map(normaliseMultipartQuestion);
+  }
+  return homework;
+}
+
 function renderReview(){
   if (!state.draft) return location.hash="#/create";
+  state.draft.questions=(state.draft.questions||[]).map(normaliseMultipartQuestion);
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   app.innerHTML = shell(`
     <section class="mobile-page-head">
@@ -565,6 +690,7 @@ function questionEditor(q,i){
     <div class="question-form">
       <div class="question-source-row"><span class="pill">${esc(q.source_label||`Page ${(q.page_index??0)+1}`)}</span>${q.needs_visual?`<span class="pill orange">Visual question</span>`:""}</div>
       ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>${q.visual_user_adjusted?"Teacher-adjusted image":"AI-selected image from the worksheet"}</figcaption></figure>` : `<div class="visual-missing-note">${q.needs_visual?"This question may need an image. Select the relevant area from the worksheet.":"No worksheet image attached."}</div>`}
+      ${q.multipart_incomplete?`<div class="notice multipart-warning"><strong>Check all parts:</strong> Numera detected more than one printed part but could not confidently read every separate answer. Complete or correct the part fields below before publishing.</div>`:""}
       <div class="question-image-actions">
         <button type="button" class="btn secondary" onclick="openCropEditor(${i})">✂️ ${q.visual_data_url?"Adjust image":"Choose image area"}</button>
         ${q.visual_data_url?`<button type="button" class="btn ghost" onclick="removeQuestionImageDirect(${i})">Remove image</button>`:""}
@@ -630,7 +756,18 @@ window.publishHomework = async () => {
   const title=$("#title").value.trim() || "Year 4 Maths";
   const topic=$("#topic").value.trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
-  if(state.draft.questions.some(q=>{if(!String(q.prompt||"").trim())return true;if(q.type==="drawing")return false;if(q.type==="multipart")return !(q.parts?.length)||q.parts.some(p=>!String(p.prompt||"").trim()||!String(p.answer??"").trim());return String(q.answer??"").trim()==="";})) return alert("Every question part needs wording and a correct answer.");
+  if(state.draft.questions.some(q=>{
+    if(!String(q.prompt||"").trim()) return true;
+    if(q.type==="drawing") return false;
+    if(q.type==="multipart"){
+      return !(q.parts?.length>1) || q.parts.some(p=>
+        !String(p.prompt||"").trim() ||
+        !String(p.answer??"").trim() ||
+        /check wording/i.test(String(p.prompt||""))
+      );
+    }
+    return String(q.answer??"").trim()==="";
+  })) return alert("Every part of a multi-part question must have its own wording and correct answer before publishing.");
   const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || q.type==="drawing") && !q.teacher_confirmed);
   if(unchecked>=0){
     alert(`Please open Question ${unchecked+1} and confirm that you have checked its visual and answer.`);
@@ -698,7 +835,7 @@ async function loadHomework(id, mode){
   if(!id) return renderLanding();
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading…</h2></div>`);
   try{
-    state.homework=await api(`/api/homeworks?id=${encodeURIComponent(id)}`);
+    state.homework=normaliseHomeworkQuestions(await api(`/api/homeworks?id=${encodeURIComponent(id)}`));
     if(mode==="results") renderResults();
     else renderJoin();
   }catch(e){app.innerHTML=shell(`<div class="card"><h2>Homework unavailable</h2><p>${esc(e.message)}</p></div>`,true);}
