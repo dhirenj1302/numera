@@ -48,6 +48,110 @@ function outputText(data){
   return chunks.join("\n").trim();
 }
 
+
+const repairedMultipartSchema={
+  type:"object",
+  additionalProperties:false,
+  required:["type","prompt","answer","options","hint","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
+  properties:{
+    type:{type:"string",enum:["multipart"]},
+    prompt:{type:"string"},
+    answer:{type:"string"},
+    options:{type:"array",items:{type:"string"}},
+    hint:{type:"string"},
+    explanation:{type:"string"},
+    topic:{type:"string"},
+    practice_prompt:{type:"string"},
+    practice_answer:{type:"string"},
+    needs_visual:{type:"boolean"},
+    visual_bbox:{type:"array",minItems:4,maxItems:4,items:{type:"number"}},
+    requires_teacher_check:{type:"boolean"},
+    answer_working:{type:"string"},
+    answer_unit:{type:"string"},
+    parts:{
+      type:"array",
+      minItems:2,
+      maxItems:6,
+      items:{
+        type:"object",
+        additionalProperties:false,
+        required:["label","prompt","answer","answer_unit","type"],
+        properties:{
+          label:{type:"string"},
+          prompt:{type:"string"},
+          answer:{type:"string"},
+          answer_unit:{type:"string"},
+          type:{type:"string",enum:["number","time","multiple_choice"]}
+        }
+      }
+    }
+  }
+};
+
+function countPrintedPartMarkers(text=""){
+  const matches=String(text).match(/\([a-f]\)/gi)||[];
+  return new Set(matches.map(x=>x.toLowerCase())).size;
+}
+
+async function repairMultipartQuestion(context,imageUrl,pageIndex,question){
+  const response=await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",
+    headers:{Authorization:`Bearer ${context.env.OPENAI_API_KEY}`,"Content-Type":"application/json"},
+    body:JSON.stringify({
+      model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
+      input:[{role:"user",content:[
+        {type:"input_text",text:`Re-read PAGE ${pageIndex+1}. The previous extraction appears to have merged a multi-part maths question.
+
+Locate the exact printed question corresponding to:
+${question.prompt}
+
+Return that single question only. It contains separately answerable printed parts such as (a), (b), and possibly more.
+
+NON-NEGOTIABLE:
+- type must be multipart.
+- Return one parts item for EVERY printed part, in order.
+- Each part needs its own exact wording, solved answer, answer unit, and input type.
+- The top-level prompt should contain only the shared introductory wording, not repeat all part questions.
+- Do not omit part (b) or merge answers.
+- Preserve any required visual crop and all existing teaching information.`},
+        {type:"input_image",image_url:imageUrl,detail:"high"}
+      ]}],
+      text:{format:{type:"json_schema",name:"numera_multipart_repair",strict:true,schema:repairedMultipartSchema}},
+      max_output_tokens:5000
+    })
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(data.error?.message||`OpenAI returned ${response.status}`);
+  const raw=outputText(data);
+  if(!raw) throw new Error("No repaired multipart data returned.");
+  return JSON.parse(raw);
+}
+
+async function repairMissedMultipart(context,imageUrl,pageIndex,questions){
+  const repaired=[];
+  for(const q of questions||[]){
+    const markerCount=countPrintedPartMarkers(q.prompt);
+    const partsCount=Array.isArray(q.parts)?q.parts.length:0;
+
+    if(markerCount>=2 && partsCount<markerCount){
+      try{
+        const fixed=await repairMultipartQuestion(context,imageUrl,pageIndex,q);
+        repaired.push({...fixed,multipart_repaired:true});
+        continue;
+      }catch(error){
+        repaired.push({...q,type:"multipart",multipart_incomplete:true,repair_warning:error.message});
+        continue;
+      }
+    }
+
+    if(partsCount>1 && q.type!=="multipart"){
+      q.type="multipart";
+    }
+    repaired.push(q);
+  }
+  return repaired;
+}
+
 async function extractPage(context,imageUrl,pageIndex){
   const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.
 
@@ -86,8 +190,14 @@ For every complete visible question:
   }
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
-  try{return JSON.parse(raw)}
-  catch{throw new Error("OpenAI returned an invalid page format.");}
+  try{
+    const parsed=JSON.parse(raw);
+    parsed.questions=await repairMissedMultipart(context,imageUrl,pageIndex,parsed.questions||[]);
+    return parsed;
+  }catch(error){
+    if(error instanceof SyntaxError) throw new Error("OpenAI returned an invalid page format.");
+    throw error;
+  }
 }
 
 export async function onRequestPost(context){
@@ -109,6 +219,9 @@ export async function onRequestPost(context){
         if(page.page_topic) pageTopics.push(page.page_topic);
         if(page.warning) warnings.push(`Page ${i+1}: ${page.warning}`);
         for(const question of page.questions||[]){
+          if(question.repair_warning){
+            warnings.push(`Page ${i+1}: a multi-part question needs teacher correction because ${question.repair_warning}`);
+          }
           allQuestions.push({
             ...question,
             page_index:i,
