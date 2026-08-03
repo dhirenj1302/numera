@@ -1,80 +1,270 @@
-export async function onRequest(context) {
-  if(context.request.method==="GET") return list(context);
+
+export async function onRequest(context){
   if(context.request.method==="POST") return create(context);
+  if(context.request.method==="GET") return list(context);
   return Response.json({error:"Method not allowed"},{status:405});
 }
 
-const json = (body, init={}) => Response.json(body,{
+const json=(body,init={})=>Response.json(body,{
   ...init,
-  headers:{
-    "Cache-Control":"no-store",
-    ...(init.headers||{})
-  }
+  headers:{"Cache-Control":"no-store",...(init.headers||{})}
 });
+
+const slug=value=>String(value||"")
+  .toLowerCase()
+  .normalize("NFKD")
+  .replace(/[^a-z0-9]+/g,"-")
+  .replace(/^-+|-+$/g,"")
+  .slice(0,80) || "general-maths";
+
+function questionConcept(question,homework){
+  const conceptName=String(
+    question.concept_name ||
+    question.subtopic ||
+    question.topic ||
+    homework.topic ||
+    "General maths"
+  ).trim();
+
+  return {
+    concept_key:String(question.concept_key||`${slug(homework.year_group)}:${slug(conceptName)}`),
+    concept_name:conceptName,
+    curriculum_objective:String(
+      question.curriculum_objective ||
+      `${homework.year_group || "Primary"} — ${conceptName}`
+    ),
+    year_group:String(homework.year_group||"Year 4"),
+    topic:String(question.topic||homework.topic||"Mixed maths")
+  };
+}
+
+function evidenceFromAttempt(attempt){
+  if(attempt?.requires_teacher_review){
+    return {
+      evidence_score:0.50,
+      evidence_weight:0.20,
+      evidence_type:"teacher_review_pending",
+      understanding_state:"unverified"
+    };
+  }
+
+  const firstCorrect=attempt?.first_correct===true;
+  const mastered=attempt?.mastered===true;
+  const hintUsed=attempt?.hint_used===true;
+  const retries=Math.max(0,Number(attempt?.retries)||0);
+
+  if(firstCorrect && !hintUsed){
+    return {evidence_score:1.00,evidence_weight:1.00,evidence_type:"independent_correct",understanding_state:"secure"};
+  }
+  if(firstCorrect && hintUsed){
+    return {evidence_score:0.82,evidence_weight:0.85,evidence_type:"correct_after_hint",understanding_state:"developing"};
+  }
+  if(mastered){
+    const score=Math.max(0.55,0.72-(retries*0.05));
+    return {evidence_score:score,evidence_weight:0.75,evidence_type:"mastered_after_feedback",understanding_state:"developing"};
+  }
+  return {evidence_score:0.18,evidence_weight:0.90,evidence_type:"not_yet_mastered",understanding_state:"priority"};
+}
+
+function nextReviewDate(score){
+  const days=score>=85?28:score>=70?14:score>=50?7:2;
+  const date=new Date(Date.now()+days*86400000);
+  return date.toISOString().slice(0,19).replace("T"," ");
+}
+
+async function updateUnderstanding(context,{submissionId,homework,username,attempts}){
+  const questions=Array.isArray(homework.questions)?homework.questions:[];
+  const statements=[];
+
+  for(let i=0;i<questions.length;i++){
+    const question=questions[i]||{};
+    const attempt=attempts[i]||{};
+    const concept=questionConcept(question,homework);
+    const evidence=evidenceFromAttempt(attempt);
+    const masteryScore=Math.round(evidence.evidence_score*100);
+    const eventId=crypto.randomUUID();
+
+    statements.push(
+      context.env.DB.prepare(`
+        INSERT INTO concepts
+          (concept_key,concept_name,curriculum_objective,year_group,topic)
+        VALUES (?,?,?,?,?)
+        ON CONFLICT(concept_key) DO UPDATE SET
+          concept_name=excluded.concept_name,
+          curriculum_objective=excluded.curriculum_objective,
+          year_group=excluded.year_group,
+          topic=excluded.topic
+      `).bind(
+        concept.concept_key,concept.concept_name,concept.curriculum_objective,
+        concept.year_group,concept.topic
+      )
+    );
+
+    statements.push(
+      context.env.DB.prepare(`
+        INSERT INTO learning_events
+          (id,student_username,submission_id,homework_id,question_index,
+           concept_key,evidence_type,evidence_score,evidence_weight,
+           first_correct,hint_used,retries,mastered,understanding_state)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).bind(
+        eventId,username,submissionId,homework.id,i,
+        concept.concept_key,evidence.evidence_type,evidence.evidence_score,
+        evidence.evidence_weight,attempt.first_correct===true?1:0,
+        attempt.hint_used===true?1:0,Number(attempt.retries)||0,
+        attempt.mastered===true?1:0,evidence.understanding_state
+      )
+    );
+
+    statements.push(
+      context.env.DB.prepare(`
+        INSERT INTO student_concept_mastery
+          (student_username,concept_key,mastery_score,confidence_score,
+           evidence_count,last_evidence_type,last_seen_at,next_review_at)
+        VALUES (?,?,?,?,1,?,CURRENT_TIMESTAMP,?)
+        ON CONFLICT(student_username,concept_key) DO UPDATE SET
+          mastery_score=ROUND(
+            (
+              student_concept_mastery.mastery_score *
+              student_concept_mastery.confidence_score
+              +
+              excluded.mastery_score *
+              excluded.confidence_score
+            )
+            /
+            NULLIF(
+              student_concept_mastery.confidence_score +
+              excluded.confidence_score,
+              0
+            )
+          ),
+          confidence_score=MIN(
+            10.0,
+            student_concept_mastery.confidence_score +
+            excluded.confidence_score
+          ),
+          evidence_count=student_concept_mastery.evidence_count+1,
+          last_evidence_type=excluded.last_evidence_type,
+          last_seen_at=CURRENT_TIMESTAMP,
+          next_review_at=excluded.next_review_at
+      `).bind(
+        username,concept.concept_key,masteryScore,evidence.evidence_weight,
+        evidence.evidence_type,nextReviewDate(masteryScore)
+      )
+    );
+  }
+
+  // D1 batch is atomic: either all understanding updates succeed or none do.
+  if(statements.length) await context.env.DB.batch(statements);
+}
 
 async function create(context){
   try{
     if(!context.env.DB) return json({error:"Cloudflare D1 binding DB is missing."},{status:503});
+    const body=await context.request.json();
+    const username=String(body.student_username||"").trim().toLowerCase();
 
-    const b=await context.request.json();
-    if(!b.homework_id) return json({error:"homework_id is required."},{status:400});
-    if(!String(b.student_name||"").trim()) return json({error:"student_name is required."},{status:400});
+    if(!body.homework_id) return json({error:"homework_id is required."},{status:400});
+    if(!username) return json({error:"Student username is required."},{status:400});
 
-    const attemptsJson=JSON.stringify(b.attempts||[]);
-    const strengthsJson=JSON.stringify(b.strengths||[]);
-    const needsJson=JSON.stringify(b.needs_practice||[]);
-    const payloadBytes=new TextEncoder().encode(attemptsJson).length;
+    const homeworkRow=await context.env.DB.prepare(`
+      SELECT id,title,year_group,topic,questions_json
+      FROM homeworks WHERE id=?
+    `).bind(body.homework_id).first();
 
-    if(payloadBytes>750000){
+    if(!homeworkRow) return json({error:"Homework was not found."},{status:404});
+
+    const homework={
+      ...homeworkRow,
+      questions:JSON.parse(homeworkRow.questions_json||"[]")
+    };
+
+    const attempts=Array.isArray(body.attempts)?body.attempts:[];
+    const id=crypto.randomUUID();
+
+    await context.env.DB.prepare(`
+      INSERT INTO submissions
+        (id,homework_id,student_name,student_username,original_score,
+         mastery_score,total_questions,attempts_json,strengths_json,
+         needs_practice_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      id,body.homework_id,String(body.student_name||"").trim(),username,
+      Number(body.original_score)||0,Number(body.mastery_score)||0,
+      Math.max(1,Number(body.total_questions)||1),
+      JSON.stringify(attempts),JSON.stringify(body.strengths||[]),
+      JSON.stringify(body.needs_practice||[])
+    ).run();
+
+    try{
+      await updateUnderstanding(context,{
+        submissionId:id,homework,username,attempts
+      });
+    }catch(understandingError){
+      // Preserve the completed homework even if understanding aggregation fails.
+      console.error("Understanding update failed",understandingError);
       return json({
-        error:"The result data is too large to save. Drawing preview images must not be included.",
-        payload_bytes:payloadBytes
-      },{status:413});
+        id,saved:true,understanding_updated:false,
+        understanding_error:understandingError.message
+      });
     }
 
-    const id=crypto.randomUUID();
-    await context.env.DB.prepare(`INSERT INTO submissions
-      (id,homework_id,student_name,original_score,mastery_score,total_questions,attempts_json,strengths_json,needs_practice_json)
-      VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(
-        id,
-        b.homework_id,
-        String(b.student_name).trim(),
-        Number(b.original_score)||0,
-        Number(b.mastery_score)||0,
-        Math.max(1,Number(b.total_questions)||1),
-        attemptsJson,
-        strengthsJson,
-        needsJson
-      ).run();
-
-    return json({id,saved:true});
-  }catch(e){
-    return json({error:e.message||"The result could not be saved to D1."},{status:500});
+    return json({id,saved:true,understanding_updated:true});
+  }catch(error){
+    return json({error:error.message||"The result could not be saved."},{status:500});
   }
 }
 
 async function list(context){
   try{
     if(!context.env.DB) return json({error:"Cloudflare D1 binding DB is missing."},{status:503});
-    const homeworkId=new URL(context.request.url).searchParams.get("homework_id");
-    if(!homeworkId) return json({error:"homework_id is required."},{status:400});
+    const url=new URL(context.request.url);
+    const username=String(url.searchParams.get("student_username")||"").trim().toLowerCase();
+    const homeworkId=url.searchParams.get("homework_id");
 
+    if(username){
+      const {results=[]}=await context.env.DB.prepare(`
+        SELECT s.student_name,s.student_username,s.original_score,
+               s.mastery_score,s.total_questions,s.completed_at,
+               h.title AS homework_title,h.topic
+        FROM submissions s
+        JOIN homeworks h ON h.id=s.homework_id
+        WHERE s.student_username=?
+        ORDER BY s.completed_at DESC
+      `).bind(username).all();
+
+      const percentages=results.map(row=>({
+        original:Math.round(row.original_score/Math.max(1,row.total_questions)*100),
+        mastery:Math.round(row.mastery_score/Math.max(1,row.total_questions)*100)
+      }));
+      const average=key=>percentages.length
+        ? Math.round(percentages.reduce((sum,row)=>sum+row[key],0)/percentages.length)
+        : 0;
+
+      return json({
+        summary:{
+          homework_count:results.length,
+          average_original:average("original"),
+          average_mastery:average("mastery")
+        },
+        results
+      });
+    }
+
+    if(!homeworkId) return json({error:"homework_id or student_username is required."},{status:400});
     const {results=[]}=await context.env.DB.prepare(`
-      SELECT id,homework_id,student_name,original_score,mastery_score,total_questions,
-             attempts_json,strengths_json,needs_practice_json,completed_at
-      FROM submissions
+      SELECT * FROM submissions
       WHERE homework_id=?
       ORDER BY completed_at DESC
     `).bind(homeworkId).all();
 
-    return json(results.map(r=>({
-      ...r,
-      attempts:JSON.parse(r.attempts_json||"[]"),
-      strengths:JSON.parse(r.strengths_json||"[]"),
-      needs_practice:JSON.parse(r.needs_practice_json||"[]")
+    return json(results.map(row=>({
+      ...row,
+      attempts:JSON.parse(row.attempts_json||"[]"),
+      strengths:JSON.parse(row.strengths_json||"[]"),
+      needs_practice:JSON.parse(row.needs_practice_json||"[]")
     })));
-  }catch(e){
-    return json({error:e.message||"Results could not be loaded from D1."},{status:500});
+  }catch(error){
+    return json({error:error.message||"Results could not be loaded."},{status:500});
   }
 }
