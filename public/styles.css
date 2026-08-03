@@ -231,3 +231,44 @@
   border-color:#fdb022;
   background:#fffaeb;
 }
+
+.field-help{display:block;margin-top:5px;color:var(--muted);font-size:12px}.child-history-card{margin-top:14px}.small-spinner{width:38px;height:38px;border-width:5px}.parent-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.mini-score{padding:12px 8px;border-radius:15px;background:#f8f9fc;text-align:center}.mini-score span{display:block;font-size:11px;color:var(--muted)}.mini-score strong{display:block;margin-top:5px;font-size:23px}.mini-score.mastery{background:var(--green-soft);color:var(--green-dark)}.progress-history-list{display:grid;gap:9px}.progress-history-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px}.progress-history-item span{display:block;color:var(--muted);font-size:12px}.history-score-pair{display:flex;gap:7px}.history-score-pair span,.history-score-pair strong{padding:7px 8px;border-radius:10px;background:#f2f4f7}.history-score-pair strong{background:var(--green-soft);color:var(--green-dark)}
+
+
+.understanding-hero{
+  display:grid;
+  gap:14px;
+  padding:18px;
+  margin:14px 0;
+  border-radius:20px;
+  background:linear-gradient(145deg,var(--navy),var(--navy-2));
+  color:#fff;
+}
+.understanding-hero .small{color:#cbd3ff;font-weight:800;letter-spacing:.08em}
+.understanding-hero>div>strong{display:block;font-size:44px;line-height:1;margin:7px 0}
+.understanding-hero p{margin:0;color:#dfe4ff;font-size:13px;line-height:1.5}
+.understanding-counts{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.understanding-counts span{padding:9px 7px;border-radius:12px;background:rgba(255,255,255,.1);text-align:center;font-size:11px}
+.understanding-counts b{display:block;font-size:20px}
+.understanding-section{margin-top:18px}
+.understanding-section h4{margin:0 0 10px}
+.understanding-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 90px 48px;
+  gap:9px;
+  align-items:center;
+  padding:10px 0;
+  border-bottom:1px solid var(--line);
+}
+.understanding-label strong,.understanding-label span{display:block}
+.understanding-label span{margin-top:3px;color:var(--muted);font-size:11px}
+.understanding-meter{height:10px;border-radius:999px;background:#eaecf0;overflow:hidden}
+.understanding-meter>div{height:100%;border-radius:999px;background:var(--purple)}
+.understanding-value{font-size:12px;font-weight:900;text-align:right}
+.understanding-value.secure{color:var(--green-dark)}
+.understanding-value.developing{color:#b54708}
+.understanding-value.priority{color:var(--red)}
+.understanding-value.insufficient_evidence{color:var(--muted)}
+@media(min-width:620px){
+  .understanding-hero{grid-template-columns:minmax(0,1fr) 260px;align-items:end}
+}

@@ -6,6 +6,7 @@ const state = {
   draft: null,
   homework: null,
   studentName: "",
+  studentUsername: localStorage.getItem("numera:studentUsername") || "",
   index: 0,
   attempts: [],
   selected: null,
@@ -843,22 +844,27 @@ async function loadHomework(id, mode){
 
 function renderJoin(){
   app.innerHTML=shell(`
-    <div class="mission">
-      <div class="mascot">🟢</div>
-      <h1>Welcome!</h1>
-      <p class="muted">${esc(state.homework.title)}</p>
-    </div>
+    <div class="mission"><div class="mascot">🟢</div><h1>Welcome!</h1><p class="muted">${esc(state.homework.title)}</p></div>
     <div class="card">
-      <div class="field"><label>Enter your child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Aaryan"></div>
+      <div class="field"><label>Child’s Numera username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. aaryan-j"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
+      <div class="field"><label>Child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Aaryan"></div>
       <button class="btn green block" onclick="joinHomework()">Continue</button>
     </div>
-    <p class="small muted" style="text-align:center">No student account is required for this prototype.</p>
+    <p class="small muted" style="text-align:center">Use letters, numbers and hyphens only. Avoid a full legal name.</p>
   `);
 }
-window.joinHomework=()=>{
-  const n=$("#studentName").value.trim();
-  if(!n) return alert("Please enter a first name.");
-  state.studentName=n; state.index=0; state.attempts=[]; renderMission();
+window.joinHomework=async()=>{
+  const name=$("#studentName").value.trim();
+  const username=$("#studentUsername").value.trim().toLowerCase();
+  if(!name) return alert("Please enter a first name.");
+  if(!/^[a-z0-9][a-z0-9-]{2,23}$/.test(username)) return alert("Choose a username 3–24 characters long using letters, numbers or hyphens.");
+  try{
+    const student=await api("/api/students",{method:"POST",body:JSON.stringify({username,display_name:name})});
+    state.studentName=student.display_name;
+    state.studentUsername=student.username;
+    localStorage.setItem("numera:studentUsername",student.username);
+    state.index=0; state.attempts=[]; renderMission();
+  }catch(e){alert(e.message);}
 };
 
 function renderMission(){
@@ -1062,8 +1068,8 @@ window.checkAnswer=()=>{
     `);
     return;
   }
-  const record=state.attempts[state.index] || {question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false};
-  if(!state.attempts[state.index]){
+  const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false};
+  if(record.first_answer===null || record.first_answer===""){
     record.first_answer=given;
     record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
@@ -1079,7 +1085,7 @@ window.returnToCurrentQuestion = () => {
 
 window.showHint=()=>{
   const q=state.homework.questions[state.index];
-  const record=state.attempts[state.index] || {question_index:state.index,first_answer:"",first_correct:false,retries:0,mastered:false,hint_used:true};
+  const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:true};
   record.hint_used=true; state.attempts[state.index]=record;
   const hint = q.hint || "Break the problem into smaller steps.";
   app.innerHTML=shell(`
@@ -1207,6 +1213,7 @@ async function finishHomework(){
     payload:{
       homework_id:state.homework.id,
       student_name:state.studentName,
+      student_username:state.studentUsername,
       original_score:original,
       mastery_score:mastery,
       total_questions:scoreTotal,
@@ -1243,6 +1250,10 @@ async function savePendingSubmission(){
     const s=state.pendingSubmission.summary;
     state.pendingSubmission=null;
     renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id);
+    if(result.understanding_updated===false){
+      console.warn("Result saved, but understanding graph update failed:",result.understanding_error);
+    }
+    setTimeout(loadParentProgress,80);
   }catch(e){
     renderSubmissionSaveError(e);
   }
@@ -1298,12 +1309,9 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <h3>Keep practising</h3><p>${needs.length?needs.map(x=>`• ${esc(x)}`).join("<br>"):"No topic stood out as needing further practice."}</p>
       <div class="feedback learn"><strong>Parent suggestion</strong><br>Ask ${esc(state.studentName)} to explain one question aloud. Explaining the method helps make the learning stick.</div>
     </div>
-    <div class="card teacher-results-card">
-      <h3>For the teacher or parent</h3>
-      <p class="muted">Open the results dashboard to see the original score, mastery score and any areas needing support.</p>
-      <a class="btn primary block teacher-results-button" href="#/results?id=${state.homework.id}">📊 View teacher results</a>
-      <button class="btn secondary block" style="margin-top:10px" onclick="shareTeacherResults()">Share teacher-results link</button>
-      <p class="small muted" style="margin-bottom:0">Prototype note: this link is not password protected yet, so share it only with the intended adult.</p>
+    <div class="card child-history-card">
+      <div class="row between wrap"><div><h3>${esc(state.studentName)}’s Numera progress</h3><p class="muted">Past homework for <strong>@${esc(state.studentUsername)}</strong>.</p></div><button class="btn secondary" onclick="loadParentProgress()">↻ Refresh</button></div>
+      <div id="parentProgress"><div class="spinner small-spinner"></div><p class="muted">Loading past results…</p></div>
     </div>
   `);
   if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
@@ -1316,6 +1324,76 @@ window.shareTeacherResults = async () => {
   } else {
     await navigator.clipboard.writeText(url);
     alert("Teacher-results link copied.");
+  }
+};
+
+
+window.loadParentProgress=async()=>{
+  const box=$("#parentProgress");
+  if(!box) return;
+  try{
+    const [history,understanding]=await Promise.all([
+      api(`/api/submissions?student_username=${encodeURIComponent(state.studentUsername)}&t=${Date.now()}`),
+      api(`/api/understanding?student_username=${encodeURIComponent(state.studentUsername)}&t=${Date.now()}`)
+    ]);
+
+    const rows=history.results||[];
+    const scores=history.summary||{};
+    const u=understanding.summary||{};
+    const concepts=understanding.concepts||[];
+
+    const conceptRows=concepts.slice(0,8).map(c=>`
+      <article class="understanding-row">
+        <div class="understanding-label">
+          <strong>${esc(c.concept_name)}</strong>
+          <span>${esc(c.curriculum_objective||c.topic||"Maths")}</span>
+        </div>
+        <div class="understanding-meter" aria-label="${esc(c.concept_name)} ${c.mastery_score}%">
+          <div style="width:${Math.max(0,Math.min(100,c.mastery_score))}%"></div>
+        </div>
+        <span class="understanding-value ${esc(c.band)}">${c.mastery_score}%</span>
+      </article>
+    `).join("");
+
+    box.innerHTML=`
+      <section class="understanding-hero">
+        <div>
+          <span class="small">CURRENT UNDERSTANDING</span>
+          <strong>${u.understanding_score||0}%</strong>
+          <p>Built from ${u.evidence_count||0} question-level learning signals—not just test scores.</p>
+        </div>
+        <div class="understanding-counts">
+          <span><b>${u.secure_count||0}</b> secure</span>
+          <span><b>${u.developing_count||0}</b> developing</span>
+          <span><b>${u.priority_count||0}</b> priority</span>
+        </div>
+      </section>
+
+      <div class="parent-summary-grid">
+        <div class="mini-score"><span>Homeworks</span><strong>${scores.homework_count||0}</strong></div>
+        <div class="mini-score"><span>Average original</span><strong>${scores.average_original||0}%</strong></div>
+        <div class="mini-score mastery"><span>Average mastery</span><strong>${scores.average_mastery||0}%</strong></div>
+      </div>
+
+      <section class="understanding-section">
+        <div class="row between"><h4>Understanding map</h4><span class="small muted">${u.concept_count||0} concepts observed</span></div>
+        ${conceptRows||`<p class="muted">Complete more homework to build the understanding map.</p>`}
+      </section>
+
+      <section class="understanding-section">
+        <h4>Recent homework</h4>
+        ${rows.length?`<div class="progress-history-list">${rows.slice(0,8).map(r=>{
+          const original=Math.round(r.original_score/Math.max(1,r.total_questions)*100);
+          const mastery=Math.round(r.mastery_score/Math.max(1,r.total_questions)*100);
+          return `<article class="progress-history-item">
+            <div><strong>${esc(r.homework_title||"Maths homework")}</strong><span>${esc(r.topic||"Mixed maths")} · ${new Date(r.completed_at+"Z").toLocaleDateString("en-GB")}</span></div>
+            <div class="history-score-pair"><span>${original}%</span><strong>${mastery}%</strong></div>
+          </article>`;
+        }).join("")}</div>`:`<p class="muted">This is the first recorded homework for this username.</p>`}
+      </section>
+    `;
+  }catch(error){
+    box.innerHTML=`<div class="notice"><strong>Progress could not be loaded.</strong><br>${esc(error.message)}</div>`;
   }
 };
 
