@@ -166,7 +166,9 @@ function router() {
   const [path, query] = hash.slice(1).split("?");
   const params = new URLSearchParams(query || "");
   if (path === "/") return renderLanding();
+  if (path === "/teacher-signin") return renderSetterAccess({mode:"signin"});
   if (path === "/teacher-access") return renderSetterAccess();
+  if (path === "/teacher-account") return renderSetterAccess();
   if (path === "/teacher-dashboard") return renderSetterDashboard();
   if (path === "/students-manage") return renderStudentManager();
   if (path === "/review-access") return renderReviewAccess();
@@ -181,7 +183,7 @@ function router() {
   if (path === "/published") return renderPublished();
   if (path === "/play") return loadHomework(params.get("id"), params.get("preview")==="1"?"preview":"play");
   if (path === "/results") return loadHomework(params.get("id"), "results");
-  renderLanding();
+  renderNotFound(path);
 }
 window.addEventListener("hashchange",()=>{
   rememberRoute(currentRoute());
@@ -195,6 +197,23 @@ window.addEventListener("popstate",()=>{
   }
 });
 
+function renderNotFound(path){
+  app.innerHTML=shell(`
+    <section class="mobile-page-head">
+      <span class="step-chip">Navigation</span>
+      <h1>That page could not be opened</h1>
+      <p class="muted">The link may be old or incomplete. Choose where you want to go.</p>
+    </section>
+    <div class="card navigation-recovery">
+      <a class="btn green block" href="#/">Home</a>
+      <a class="btn secondary block" href="#/teacher-signin">Teacher sign in</a>
+      <a class="btn secondary block" href="#/review-access">Review results</a>
+      <a class="btn secondary block" href="#/demo">Try student demo</a>
+      <p class="small muted">Route: ${esc(path||"/")}</p>
+    </div>
+  `,true);
+}
+
 function renderLanding(){
   app.innerHTML=shell(`
     <section class="hero landing-hero">
@@ -202,7 +221,7 @@ function renderLanding(){
       <h1>Homework<br>that <span style="color:#34d399">teaches.</span></h1>
       <p>Turn maths worksheets into interactive lessons that mark answers, explain mistakes and build a long-term picture of what each child understands.</p>
       <div class="row wrap landing-actions">
-        <a class="btn green" href="#/setter-access">Set homework</a>
+        <a class="btn green" href="#/teacher-account">Set homework</a>
         <a class="btn secondary" href="#/review-access">Review work</a>
         <a class="btn secondary" href="#/demo">Try student demo</a>
       </div>
@@ -263,49 +282,69 @@ function pinInput(id,label="Four-digit PIN"){
 }
 function validPin(pin){return /^\d{4}$/.test(String(pin||""));}
 
-function renderSetterAccess(){
+function renderSetterAccess(options={}){
   const existing=state.setterSession;
+  const signInOnly=options.mode==="signin";
+
   app.innerHTML=shell(`
-    <section class="mobile-page-head"><span class="step-chip">Teacher account</span><h1>${existing?`Welcome back, ${esc(existing.display_name)}`:"Create or manage homework"}</h1><p class="muted">No email is required. Keep the username and PIN somewhere safe.</p></section>
-    ${existing?`<div class="card"><button class="btn green block" onclick="location.hash='#/setter-dashboard'">Open teacher dashboard</button><button class="btn ghost block" onclick="logoutSetter()">Use another account</button></div>`:`
-    <div class="access-grid">
-      <form class="card" onsubmit="createSetter(event)">
-        <h2>Create a free teacher account</h2>
-        <div class="field"><label>Username</label><input id="newSetterUsername" autocapitalize="none" placeholder="e.g. Teacher123"></div>
-        <div class="field"><label>Name</label><input id="newSetterName" placeholder="e.g. Thomas"></div>
-        ${pinInput("newSetterPin")}
-        <button class="btn green block">Create account</button>
-      </form>
-      <form class="card" onsubmit="loginSetter(event)">
-        <h2>Return to a teacher account</h2>
-        <div class="field"><label>Username</label><input id="setterUsername" autocapitalize="none"></div>
-        ${pinInput("setterPin")}
-        <button class="btn primary block">Sign in</button>
-      </form>
-    </div>`}
+    <section class="mobile-page-head">
+      <span class="step-chip">Teacher account</span>
+      <h1>${existing?`Welcome back, ${esc(existing.display_name)}`:signInOnly?"Teacher sign in":"Create or manage homework"}</h1>
+      <p class="muted">${existing
+        ?"Open your dashboard to set and review work."
+        :"Use your teacher username and four-digit PIN. No email address is required for this prototype."}</p>
+    </section>
+
+    ${existing?`
+      <div class="card">
+        <button class="btn green block" onclick="location.hash='#/teacher-dashboard'">Open teacher dashboard</button>
+        <button class="btn ghost block" onclick="logoutSetter()">Use another account</button>
+      </div>
+    `:`
+      <div class="access-grid ${signInOnly?"signin-only":""}">
+        <form class="card" onsubmit="loginSetter(event)">
+          <h2>Teacher sign in</h2>
+          <div class="field"><label>Username</label><input id="setterUsername" autocapitalize="none" autocomplete="username" placeholder="e.g. Teacher123"></div>
+          ${pinInput("setterPin")}
+          <button class="btn primary block">Sign in</button>
+          ${signInOnly?`<a class="btn ghost block" href="#/teacher-account">Create a teacher account</a>`:""}
+        </form>
+
+        ${signInOnly?"":`
+          <form class="card" onsubmit="createSetter(event)">
+            <h2>Create a free teacher account</h2>
+            <div class="field"><label>Username</label><input id="newSetterUsername" autocapitalize="none" autocomplete="username" placeholder="e.g. Teacher123"></div>
+            <div class="field"><label>Name</label><input id="newSetterName" placeholder="e.g. Thomas"></div>
+            ${pinInput("newSetterPin")}
+            <button class="btn green block">Create account</button>
+          </form>
+        `}
+      </div>
+    `}
   `,true);
 }
+
 window.createSetter=async e=>{
   e.preventDefault();
   const username=$("#newSetterUsername").value.trim().toLowerCase(),display_name=$("#newSetterName").value.trim(),pin=$("#newSetterPin").value;
   if(!display_name||!validPin(pin))return alert("Enter a name and four-digit PIN.");
   try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_teacher",username,display_name,pin})});
-    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_setter",username,display_name,pin})});
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/teacher-dashboard";
   }catch(err){alert(err.message);}
 };
 window.loginSetter=async e=>{
   e.preventDefault();
   try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_teacher",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
-    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_setter",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/teacher-dashboard";
   }catch(err){alert(err.message);}
 };
-window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/setter-access";};
+window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/teacher-signin";};
 
 function renderSetterDashboard(){
   const s=state.setterSession;
-  if(!s)return location.hash="#/setter-access";
+  if(!s)return location.hash="#/teacher-signin";
   app.innerHTML=shell(`
     <section class="mobile-page-head"><span class="step-chip">Teacher dashboard</span><h1>Hello ${esc(s.display_name)}</h1><p class="muted">Create students, set work and review everyone attached to your account.</p></section>
     <div class="grid">
@@ -318,7 +357,7 @@ function renderSetterDashboard(){
 }
 
 async function renderStudentManager(){
-  const s=state.setterSession;if(!s)return location.hash="#/setter-access";
+  const s=state.setterSession;if(!s)return location.hash="#/teacher-signin";
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading students…</h2></div>`,true);
   try{
     const data=await api(`/api/accounts?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
@@ -332,7 +371,7 @@ async function renderStudentManager(){
       </form>
       <div class="history-list">${data.students.length?data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">@${esc(st.username)} · ${st.submission_count||0} completed homework${st.submission_count===1?"":"s"}</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View history</a></article>`).join(""):`<div class="empty card">No students yet.</div>`}</div>
     `,true);
-  }catch(err){alert(err.message);location.hash="#/setter-dashboard";}
+  }catch(err){alert(err.message);location.hash="#/teacher-dashboard";}
 }
 window.addSetterStudent=async e=>{
   e.preventDefault();const s=state.setterSession,pin=$("#managedStudentPin").value;
@@ -345,13 +384,32 @@ window.addSetterStudent=async e=>{
 
 function renderReviewAccess(){
   app.innerHTML=shell(`
-    <section class="mobile-page-head"><span class="step-chip">Review work</span><h1>Whose work are you reviewing?</h1></section>
-    <div class="access-grid">
-      <form class="card" onsubmit="reviewStudentLogin(event)"><h2>Parent or individual student</h2><div class="field"><label>Student username</label><input id="reviewStudentUsername"></div>${pinInput("reviewStudentPin","Student PIN")}<button class="btn green block">Open full history</button></form>
-      <div class="card"><h2>Teacher or homework creator</h2><p class="muted">Sign in to see every student and homework attached to the teacher account.</p><a class="btn primary block" href="#/setter-access">Teacher sign in</a></div>
+    <section class="mobile-page-head">
+      <span class="step-chip">Review results</span>
+      <h1>Whose work are you reviewing?</h1>
+      <p class="muted">Teachers can review every student attached to their account. Parents can open one child's history.</p>
+    </section>
+
+    <div class="review-role-grid">
+      <article class="card review-role-card">
+        <div class="review-role-icon">👨‍🏫</div>
+        <h2>Teacher</h2>
+        <p class="muted">Sign in to review students, homework completion, results and class progress.</p>
+        <a class="btn primary block" href="#/teacher-signin">Teacher sign in</a>
+      </article>
+
+      <form class="card review-role-card" onsubmit="reviewStudentLogin(event)">
+        <div class="review-role-icon">👨‍👩‍👧</div>
+        <h2>Parent or individual student</h2>
+        <p class="muted">Enter the child's student username and PIN to open their full history.</p>
+        <div class="field"><label>Student username</label><input id="reviewStudentUsername" autocapitalize="none" autocomplete="username"></div>
+        ${pinInput("reviewStudentPin","Student PIN")}
+        <button class="btn green block">Open full history</button>
+      </form>
     </div>
   `,true);
 }
+
 window.reviewStudentLogin=async e=>{
   e.preventDefault();
   try{
@@ -377,7 +435,7 @@ async function renderStudentHistory(username){
 }
 
 async function renderReviewHub(){
-  const s=state.setterSession;if(!s)return location.hash="#/setter-access";
+  const s=state.setterSession;if(!s)return location.hash="#/teacher-signin";
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Building class review…</h2></div>`,true);
   try{
     const data=await api(`/api/review?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
@@ -395,7 +453,7 @@ window.showReviewPanel=name=>{
 };
 
 function renderTeacher(){
-  if(!state.setterSession)return location.hash="#/setter-access";
+  if(!state.setterSession)return location.hash="#/teacher-signin";
   app.innerHTML = shell(`
     <h1>Good evening 👋</h1>
     <p class="muted">Create the next maths homework for your students.</p>
@@ -435,7 +493,7 @@ async function renderHomeworkHistory(){
 
 async function loadHomeworkForEditing(id){
   const session=state.setterSession;
-  if(!session) return location.hash="#/setter-access";
+  if(!session) return location.hash="#/teacher-signin";
   if(!id) return location.hash="#/history";
 
   app.innerHTML=shell(`

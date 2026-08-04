@@ -435,3 +435,14 @@
     flex-basis:100%;
   }
 }
+
+
+.review-role-grid{display:grid;gap:14px}
+.review-role-card{display:flex;flex-direction:column}
+.review-role-card .btn{margin-top:auto}
+.review-role-icon{font-size:34px;margin-bottom:8px}
+.access-grid.signin-only{max-width:560px;margin:0 auto;grid-template-columns:1fr}
+.navigation-recovery{max-width:560px;margin:0 auto}
+.navigation-recovery .btn+.btn{margin-top:8px}
+.navigation-recovery p{margin:16px 0 0;word-break:break-all}
+@media(min-width:720px){.review-role-grid{grid-template-columns:1fr 1fr}}
