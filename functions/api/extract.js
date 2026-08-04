@@ -12,13 +12,14 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
         properties:{
-          type:{type:"string",enum:["number","time","multiple_choice","drawing","multipart"]},
+          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","matching","multipart"]},
           prompt:{type:"string"},
           answer:{type:"string"},
           options:{type:"array",items:{type:"string"}},
           hint:{type:"string"},
+          hints:{type:"array",minItems:4,maxItems:4,items:{type:"string"}},
           explanation:{type:"string"},
           topic:{type:"string"},
           practice_prompt:{type:"string"},
@@ -31,7 +32,13 @@ const pageSchema = {
             items:{type:"number"}
           },
           requires_teacher_check:{type:"boolean"},
-          answer_working:{type:"string"}, answer_unit:{type:"string"}, parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
+          answer_working:{type:"string"}, answer_unit:{type:"string"},
+          point_answer:{type:"array",minItems:2,maxItems:2,items:{type:"number"}},
+          grid_bounds:{type:"array",minItems:4,maxItems:4,items:{type:"number"}},
+          grid_step:{type:"number"},
+          matching_left:{type:"array",items:{type:"string"}},
+          matching_right:{type:"array",items:{type:"string"}},
+          matching_pairs:{type:"array",items:{type:"string"}}, parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
         }
       }
     }
@@ -52,13 +59,14 @@ function outputText(data){
 const repairedMultipartSchema={
   type:"object",
   additionalProperties:false,
-  required:["type","prompt","answer","options","hint","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
+  required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
   properties:{
     type:{type:"string",enum:["multipart"]},
     prompt:{type:"string"},
     answer:{type:"string"},
     options:{type:"array",items:{type:"string"}},
     hint:{type:"string"},
+    hints:{type:"array",minItems:4,maxItems:4,items:{type:"string"}},
     explanation:{type:"string"},
     topic:{type:"string"},
     practice_prompt:{type:"string"},
@@ -113,7 +121,7 @@ NON-NEGOTIABLE:
 - Each part needs its own exact wording, solved answer, answer unit, and input type.
 - The top-level prompt should contain only the shared introductory wording, not repeat all part questions.
 - Do not omit part (b) or merge answers.
-- Preserve any required visual crop and all existing teaching information.`},
+- Preserve any required visual crop and all existing teaching information.\n- Return exactly four progressive hints following the main Hint 1 to Hint 4 rules.`},
         {type:"input_image",image_url:imageUrl,detail:"high"}
       ]}],
       text:{format:{type:"json_schema",name:"numera_multipart_repair",strict:true,schema:repairedMultipartSchema}},
@@ -160,7 +168,12 @@ Your first duty is faithful transcription. Read ONLY this page. Do not infer que
 For every complete visible question:
 1. Preserve the actual wording, numbers, mathematical symbols, units, labels and printed answer choices.
 2. Solve it and provide the correct answer.
-3. Add a brief helpful hint and a kind worked explanation for a child aged 8–10.
+3. Create exactly four progressive hint tiers in the hints array:
+   - Hint 1: a gentle orienting prompt. Do not name the operation or method.
+   - Hint 2: a strategy cue that identifies the useful approach but does not calculate it.
+   - Hint 3: scaffold the problem into short steps while preserving meaningful work for the child.
+   - Hint 4: show the worked method using the current numbers, but leave the final answer or final simple step for the child wherever possible.
+   Also put Hint 1 into the legacy hint field. Add a separate kind worked explanation for feedback after an incorrect submitted answer.
 4. Add one similar practice question and answer.
 5. Set needs_visual=true when the child must see a grid, shape, diagram, graph, pictogram, number line, table, clock, fraction model or other picture to answer.
 6. When needs_visual=true, give visual_bbox as [x,y,width,height] using coordinates from 0 to 1000 across the page. Include the whole relevant visual and any labels needed to understand it. Add a little surrounding context. If no visual is needed, use [0,0,0,0].
