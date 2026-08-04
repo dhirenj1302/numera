@@ -986,6 +986,8 @@ window.publishHomework = async () => {
   if(button){button.disabled=true;button.textContent="Publishing…";}
   try {
     const payload={
+      setter_username:state.setterSession?.username||null,
+      setter_token:state.setterSession?.token||null,
       title, topic, year_group:"Year 4",
       questions:state.draft.questions,
       settings:{hints:true, mastery:true, challenge:true, source_pages:state.draft.page_count||state.sourceImages.length}
