@@ -7,6 +7,8 @@ const state = {
   homework: null,
   studentName: "",
   studentUsername: localStorage.getItem("numera:studentUsername") || "",
+  setterSession: JSON.parse(localStorage.getItem("numera:setterSession")||"null"),
+  reviewerSession: JSON.parse(localStorage.getItem("numera:reviewerSession")||"null"),
   index: 0,
   attempts: [],
   selected: null,
@@ -83,7 +85,7 @@ const shell = (content, back=false) => `
   <header class="topbar">
     <div class="row">
       ${back ? `<button class="btn ghost" onclick="appBack()" aria-label="Go back">←</button>` : ""}
-      <div><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></div>
+      <a class="brand-link" href="#/" aria-label="Numera home"><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></a>
     </div>
     <span class="pill green">Prototype</span>
   </header>
@@ -163,6 +165,12 @@ function router() {
   const [path, query] = hash.slice(1).split("?");
   const params = new URLSearchParams(query || "");
   if (path === "/") return renderLanding();
+  if (path === "/setter-access") return renderSetterAccess();
+  if (path === "/setter-dashboard") return renderSetterDashboard();
+  if (path === "/students-manage") return renderStudentManager();
+  if (path === "/review-access") return renderReviewAccess();
+  if (path === "/review-hub") return renderReviewHub();
+  if (path === "/student-history") return renderStudentHistory(params.get("username"));
   if (path === "/teacher") return renderTeacher();
   if (path === "/demo") return renderDemoAge();
   if (path === "/history") return renderHomeworkHistory();
@@ -186,27 +194,32 @@ window.addEventListener("popstate",()=>{
 });
 
 function renderLanding(){
-  app.innerHTML = shell(`
+  app.innerHTML=shell(`
     <section class="hero landing-hero">
       <div class="small">NUMERA</div>
       <h1>Homework<br>that <span style="color:#34d399">teaches.</span></h1>
-      <p>Numera turns ordinary maths worksheets into interactive lessons that mark answers, explain mistakes and help children try again until the idea makes sense.</p>
-      <div class="row wrap" style="margin-top:22px">
-        <a class="btn green" href="#/teacher">Create homework</a>
+      <p>Turn maths worksheets into interactive lessons that mark answers, explain mistakes and build a long-term picture of what each child understands.</p>
+      <div class="row wrap landing-actions">
+        <a class="btn green" href="#/setter-access">Set homework</a>
+        <a class="btn secondary" href="#/review-access">Review work</a>
         <a class="btn secondary" href="#/demo">Try student demo</a>
       </div>
     </section>
-
     <section class="paper-comparison">
-      <span class="paper-comparison-kicker">Better than paper homework</span>
-      <h2>Paper records an answer. Numera helps create understanding.</h2>
-      <p>On paper, a mistake may remain unnoticed until the work is marked later. Numera responds immediately with progressive clues, a clear explanation and another chance to improve. Parents and teachers can then see not only the final score, but which ideas the child understands and where support is still needed.</p>
+      <span class="paper-comparison-kicker">Start without an email address</span>
+      <h2>Enter a username and name to set a homework task.</h2>
+      <p>For this early version, Numera does not ask for an email address. Setters create a username, display name and four-digit PIN, then create student usernames under their account. Students use a valid username to open assigned work, while parents and teachers can review the appropriate history.</p>
+    </section>
+    <section class="workflow-grid">
+      <article><span>1</span><h3>Setter</h3><p>A teacher or parent creates student profiles, publishes work and owns the account.</p></article>
+      <article><span>2</span><h3>Student</h3><p>The child completes assigned work using a valid student username and PIN.</p></article>
+      <article><span>3</span><h3>Reviewer</h3><p>A parent reviews one child; a setter reviews every student and homework they manage.</p></article>
     </section>
   `);
 }
 
 function renderDemoAge(){
-  const ages=[6,7,8,9,10,11];
+  const ages=[4,5,6,7,8,9,10,11];
   app.innerHTML=shell(`
     <section class="mobile-page-head demo-age-head">
       <span class="step-chip">Student demo</span>
@@ -225,7 +238,7 @@ function renderDemoAge(){
 
 window.startDemo = async age => {
   const selectedAge=Number(age);
-  if(!Number.isInteger(selectedAge) || selectedAge<6 || selectedAge>11){
+  if(!Number.isInteger(selectedAge) || selectedAge<4 || selectedAge>11){
     location.hash="#/demo";
     return;
   }
@@ -242,10 +255,148 @@ window.startDemo = async age => {
   }
 };
 
+
+function pinInput(id,label="Four-digit PIN"){
+  return `<div class="field"><label>${label}</label><input id="${id}" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="••••"></div>`;
+}
+function validPin(pin){return /^\d{4}$/.test(String(pin||""));}
+
+function renderSetterAccess(){
+  const existing=state.setterSession;
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Setter account</span><h1>${existing?`Welcome back, ${esc(existing.display_name)}`:"Set or manage homework"}</h1><p class="muted">No email is required. Keep the username and PIN somewhere safe.</p></section>
+    ${existing?`<div class="card"><button class="btn green block" onclick="location.hash='#/setter-dashboard'">Open setter dashboard</button><button class="btn ghost block" onclick="logoutSetter()">Use another account</button></div>`:`
+    <div class="access-grid">
+      <form class="card" onsubmit="createSetter(event)">
+        <h2>Create a free setter account</h2>
+        <div class="field"><label>Username</label><input id="newSetterUsername" autocapitalize="none" placeholder="e.g. Teacher123"></div>
+        <div class="field"><label>Name</label><input id="newSetterName" placeholder="e.g. Thomas"></div>
+        ${pinInput("newSetterPin")}
+        <button class="btn green block">Create account</button>
+      </form>
+      <form class="card" onsubmit="loginSetter(event)">
+        <h2>Return to an account</h2>
+        <div class="field"><label>Username</label><input id="setterUsername" autocapitalize="none"></div>
+        ${pinInput("setterPin")}
+        <button class="btn primary block">Sign in</button>
+      </form>
+    </div>`}
+  `,true);
+}
+window.createSetter=async e=>{
+  e.preventDefault();
+  const username=$("#newSetterUsername").value.trim().toLowerCase(),display_name=$("#newSetterName").value.trim(),pin=$("#newSetterPin").value;
+  if(!display_name||!validPin(pin))return alert("Enter a name and four-digit PIN.");
+  try{
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_setter",username,display_name,pin})});
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
+  }catch(err){alert(err.message);}
+};
+window.loginSetter=async e=>{
+  e.preventDefault();
+  try{
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_setter",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
+  }catch(err){alert(err.message);}
+};
+window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/setter-access";};
+
+function renderSetterDashboard(){
+  const s=state.setterSession;
+  if(!s)return location.hash="#/setter-access";
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Setter dashboard</span><h1>Hello ${esc(s.display_name)}</h1><p class="muted">Create students, set work and review everyone attached to your account.</p></section>
+    <div class="grid">
+      <button class="action-card" onclick="location.hash='#/students-manage'"><span class="icon">👥</span><span><strong>Students</strong><br><span class="small muted">Create and manage valid student usernames</span></span></button>
+      <button class="action-card" onclick="location.hash='#/teacher'"><span class="icon">＋</span><span><strong>Set homework</strong><br><span class="small muted">Photograph or upload worksheet pages</span></span></button>
+      <button class="action-card" onclick="location.hash='#/review-hub'"><span class="icon">📊</span><span><strong>Review work</strong><br><span class="small muted">By student, homework or class ranking</span></span></button>
+    </div>
+    <button class="btn ghost block" onclick="logoutSetter()">Sign out</button>
+  `,true);
+}
+
+async function renderStudentManager(){
+  const s=state.setterSession;if(!s)return location.hash="#/setter-access";
+  app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading students…</h2></div>`,true);
+  try{
+    const data=await api(`/api/accounts?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Setter students</span><h1>Student usernames</h1><p class="muted">Students must use one of these profiles to complete work assigned by this account.</p></section>
+      <form class="card" onsubmit="addSetterStudent(event)">
+        <h3>Add a student</h3>
+        <div class="field-row-mobile"><div class="field"><label>Username</label><input id="managedStudentUsername" placeholder="e.g. User123"></div><div class="field"><label>Name</label><input id="managedStudentName" placeholder="e.g. Thomas"></div></div>
+        ${pinInput("managedStudentPin","Student four-digit PIN")}
+        <button class="btn green block">Create student</button>
+      </form>
+      <div class="history-list">${data.students.length?data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">@${esc(st.username)} · ${st.submission_count||0} completed homework${st.submission_count===1?"":"s"}</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View history</a></article>`).join(""):`<div class="empty card">No students yet.</div>`}</div>
+    `,true);
+  }catch(err){alert(err.message);location.hash="#/setter-dashboard";}
+}
+window.addSetterStudent=async e=>{
+  e.preventDefault();const s=state.setterSession,pin=$("#managedStudentPin").value;
+  if(!validPin(pin))return alert("Choose a four-digit student PIN.");
+  try{
+    await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"add_student",setter_username:s.username,token:s.token,student_username:$("#managedStudentUsername").value.trim().toLowerCase(),display_name:$("#managedStudentName").value.trim(),pin})});
+    renderStudentManager();
+  }catch(err){alert(err.message);}
+};
+
+function renderReviewAccess(){
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Review work</span><h1>Whose work are you reviewing?</h1></section>
+    <div class="access-grid">
+      <form class="card" onsubmit="reviewStudentLogin(event)"><h2>Parent or individual student</h2><div class="field"><label>Student username</label><input id="reviewStudentUsername"></div>${pinInput("reviewStudentPin","Student PIN")}<button class="btn green block">Open full history</button></form>
+      <div class="card"><h2>Teacher or setter</h2><p class="muted">Sign in to see every student and homework attached to the setter account.</p><a class="btn primary block" href="#/setter-access">Setter sign in</a></div>
+    </div>
+  `,true);
+}
+window.reviewStudentLogin=async e=>{
+  e.preventDefault();
+  try{
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_student",username:$("#reviewStudentUsername").value.trim().toLowerCase(),pin:$("#reviewStudentPin").value})});
+    state.reviewerSession=session;localStorage.setItem("numera:reviewerSession",JSON.stringify(session));location.hash=`#/student-history?username=${encodeURIComponent(session.username)}`;
+  }catch(err){alert(err.message);}
+};
+
+async function renderStudentHistory(username){
+  const setter=state.setterSession,reviewer=state.reviewerSession;
+  const allowed=(setter&&setter.token)||(reviewer&&reviewer.username===username);
+  if(!allowed)return location.hash="#/review-access";
+  app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading history…</h2></div>`,true);
+  try{
+    const auth=setter?`setter_username=${encodeURIComponent(setter.username)}&token=${encodeURIComponent(setter.token)}`:`student_token=${encodeURIComponent(reviewer.token)}`;
+    const data=await api(`/api/review?student_username=${encodeURIComponent(username)}&${auth}`);
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Student history</span><h1>${esc(data.student.display_name)}</h1><p class="muted">@${esc(data.student.username)} · ${data.summary.homework_count} completed</p></section>
+      <div class="parent-summary-grid"><div class="mini-score"><span>Homeworks</span><strong>${data.summary.homework_count}</strong></div><div class="mini-score"><span>Average original</span><strong>${data.summary.average_original}%</strong></div><div class="mini-score mastery"><span>Average mastery</span><strong>${data.summary.average_mastery}%</strong></div></div>
+      <div class="history-list">${data.results.map(r=>`<article class="history-card"><div><h3>${esc(r.homework_title)}</h3><p class="muted">${esc(r.topic)} · ${r.original_percent}% original · ${r.mastery_percent}% mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(r.homework_id)}">Homework results</a></article>`).join("")||`<div class="empty card">No completed work yet.</div>`}</div>
+    `,true);
+  }catch(err){alert(err.message);location.hash="#/review-access";}
+}
+
+async function renderReviewHub(){
+  const s=state.setterSession;if(!s)return location.hash="#/setter-access";
+  app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Building class review…</h2></div>`,true);
+  try{
+    const data=await api(`/api/review?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Setter review</span><h1>Class overview</h1><p class="muted">View completion by student, by homework and as a class ranking.</p></section>
+      <div class="review-tabs"><button class="btn secondary" onclick="showReviewPanel('students')">By student</button><button class="btn secondary" onclick="showReviewPanel('homeworks')">By homework</button><button class="btn secondary" onclick="showReviewPanel('ranking')">Ranking</button></div>
+      <div id="reviewStudents" class="review-panel">${data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">${st.completed} completed · ${st.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View</a></article>`).join("")||`<div class="empty card">No students yet.</div>`}</div>
+      <div id="reviewHomeworks" class="review-panel hidden">${data.homeworks.map(h=>`<article class="history-card"><div><h3>${esc(h.title)}</h3><p class="muted">${h.completed}/${data.students.length} completed · ${h.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(h.id)}">Results</a></article>`).join("")||`<div class="empty card">No homework yet.</div>`}</div>
+      <div id="reviewRanking" class="review-panel hidden"><div class="ranking-list">${data.ranking.map((st,i)=>`<div class="ranking-row"><span>${i+1}</span><strong>${esc(st.display_name)}</strong><b>${st.average_mastery}%</b></div>`).join("")||`<div class="empty card">No results to rank.</div>`}</div><p class="small muted">Ranking is shown only as an optional class view. Intervention and improvement should remain the main teaching signals.</p></div>
+    `,true);
+  }catch(err){alert(err.message);}
+}
+window.showReviewPanel=name=>{
+  ["Students","Homeworks","Ranking"].forEach(n=>$("#review"+n)?.classList.toggle("hidden",n.toLowerCase()!==name));
+};
+
 function renderTeacher(){
+  if(!state.setterSession)return location.hash="#/setter-access";
   app.innerHTML = shell(`
     <h1>Good evening 👋</h1>
-    <p class="muted">Create Aaryan’s next Year 4 maths homework.</p>
+    <p class="muted">Create the next maths homework for your students.</p>
     <div class="grid" style="margin-top:22px">
       <button class="action-card" onclick="location.hash='#/create'">
         <span class="icon">＋</span><span><strong>New homework</strong><br><span class="muted small">Photograph or upload worksheet pages</span></span>
@@ -270,7 +421,7 @@ window.openLastResults = () => {
 async function renderHomeworkHistory(){
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading past homeworks…</h2></div>`,true);
   try{
-    const items=await api(`/api/homeworks?list=1&t=${Date.now()}`);
+    const items=await api(`/api/homeworks?list=1&setter_username=${encodeURIComponent(state.setterSession?.username||"")}&t=${Date.now()}`);
     app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Teacher library</span><h1>Past homeworks</h1><p class="muted">Open a homework to see everyone who completed it.</p></section><div class="history-list">${items.length?items.map(h=>`<article class="history-card"><div><span class="pill">${esc(h.year_group||"Year 4")}</span><h3>${esc(h.title)}</h3><p class="muted">${esc(h.topic||"Mixed maths")} · ${h.question_count} questions · ${h.submission_count} completed</p><p class="small muted">Created ${new Date(h.created_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p></div><div class="history-actions"><a class="btn primary" href="#/results?id=${h.id}">View results</a><a class="btn secondary" href="#/play?id=${h.id}">Open homework</a></div></article>`).join(""):`<div class="empty card">No published homeworks yet.</div>`}</div><a class="btn green block" href="#/create">＋ Create new homework</a>`,true);
   }catch(err){app.innerHTML=shell(`<div class="card"><h2>Could not load past homeworks</h2><p>${esc(err.message)}</p></div>`,true);}
 }
@@ -903,6 +1054,7 @@ function renderJoin(){
     <div class="card">
       <div class="field"><label>Child’s Numera username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. User123"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
       <div class="field"><label>Child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Thomas"></div>
+      <div class="field"><label>Four-digit PIN</label><input id="studentPin" inputmode="numeric" maxlength="4" placeholder="••••"></div>
       <button class="btn green block" onclick="joinHomework()">Continue</button>
     </div>
     <p class="small muted" style="text-align:center">Use letters, numbers and hyphens only. Avoid a full legal name.</p>
@@ -911,10 +1063,12 @@ function renderJoin(){
 window.joinHomework=async()=>{
   const name=$("#studentName").value.trim();
   const username=$("#studentUsername").value.trim().toLowerCase();
+  const pin=$("#studentPin").value;
   if(!name) return alert("Please enter a first name.");
+  if(!validPin(pin))return alert("Enter the four-digit student PIN.");
   if(!/^[a-z0-9][a-z0-9-]{2,23}$/.test(username)) return alert("Choose a username 3–24 characters long using letters, numbers or hyphens.");
   try{
-    const student=await api("/api/students",{method:"POST",body:JSON.stringify({username,display_name:name})});
+    const student=await api("/api/students",{method:"POST",body:JSON.stringify({username,display_name:name,pin,homework_id:state.homework.id})});
     state.studentName=student.display_name;
     state.studentUsername=student.username;
     localStorage.setItem("numera:studentUsername",student.username);
@@ -963,6 +1117,26 @@ function readTimeAnswer(prefix=""){
 
 
 const drawingState = {strokes:[],active:null};
+
+
+function fractionAnswerMarkup(prefix=""){
+  return `<div class="fraction-answer">
+    <div class="field"><label>Numerator</label><input id="${prefix}Numerator" inputmode="numeric" pattern="[0-9-]*"></div>
+    <span class="fraction-bar" aria-hidden="true"></span>
+    <div class="field"><label>Denominator</label><input id="${prefix}Denominator" inputmode="numeric" pattern="[0-9]*"></div>
+  </div>`;
+}
+function readFractionAnswer(prefix=""){
+  const n=($("#"+prefix+"Numerator")?.value||"").trim(),d=($("#"+prefix+"Denominator")?.value||"").trim();
+  if(!n||!d||Number(d)===0)return null;
+  return `${Number(n)}/${Number(d)}`;
+}
+function fractionVisualMarkup(q){
+  const denominator=Math.max(2,Math.min(12,Number(q.denominator||String(q.answer||"").split("/")[1])||4));
+  const selected=Number(state.interactiveAnswers[state.index]||0);
+  return `<div class="fraction-visual"><div class="drawing-instruction">Tap pieces to shade the fraction.</div><div class="fraction-pieces">${Array.from({length:denominator},(_,i)=>`<button class="fraction-piece ${i<selected?"selected":""}" onclick="setFractionPieces(${i+1})"></button>`).join("")}</div><p><strong>${selected}/${denominator}</strong> shaded</p></div>`;
+}
+window.setFractionPieces=n=>{state.interactiveAnswers[state.index]=n;renderQuestion();};
 
 function answerWithUnitMarkup(id,unit){return `<div class="answer-with-unit"><input id="${id}" inputmode="decimal" autocomplete="off" placeholder="Type your answer">${unit?`<span class="answer-unit">${esc(unit)}</span>`:""}</div>`;}
 function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
@@ -1108,6 +1282,44 @@ function expectedMatchingAnswer(q){
   return c.left.map((_,i)=>`${i}:${result[i]}`).join("|");
 }
 
+
+function dragMarkup(q){
+  const count=Math.max(1,Math.min(20,Number(q.drag_item_count)||8));
+  const placed=Number(state.interactiveAnswers[state.index]||0);
+  return `<div class="drag-interaction"><div class="drag-bank">${Array.from({length:count},(_,i)=>`<button class="drag-object ${i<placed?"placed":""}" draggable="true" ondragstart="dragObjectStart(event)" onclick="toggleDragObject(${i})">●</button>`).join("")}</div><div class="drop-zone" ondragover="event.preventDefault()" ondrop="dropObject(event)"><strong>Drop objects here</strong><span>${placed} placed</span></div></div>`;
+}
+window.dragObjectStart=e=>e.dataTransfer.setData("text/plain","1");
+window.dropObject=e=>{e.preventDefault();state.interactiveAnswers[state.index]=Math.min(Number(state.interactiveAnswers[state.index]||0)+1,Number(state.homework.questions[state.index].drag_item_count)||8);renderQuestion();};
+window.toggleDragObject=i=>{const current=Number(state.interactiveAnswers[state.index]||0);state.interactiveAnswers[state.index]=i<current?i:Math.max(current,i+1);renderQuestion();};
+function dragAnswer(){return Number(state.interactiveAnswers[state.index]||0);}
+
+const clockState={dragging:null};
+function clockMarkup(q){
+  const value=state.interactiveAnswers[state.index]||q.clock_start||"12:00";
+  const [h,m]=String(value).split(":").map(Number);
+  const minuteAngle=(m||0)*6,hourAngle=((h%12)+(m||0)/60)*30;
+  return `<div class="clock-interaction"><svg id="clockFace" class="clock-face" viewBox="0 0 300 300" onpointermove="moveClockHand(event)" onpointerup="endClockHand()" onpointercancel="endClockHand()"><circle cx="150" cy="150" r="125"/><g class="clock-numbers">${Array.from({length:12},(_,i)=>{const n=i+1,a=n*Math.PI/6,x=150+102*Math.sin(a),y=150-102*Math.cos(a);return `<text x="${x}" y="${y+5}" text-anchor="middle">${n}</text>`}).join("")}</g><line class="hour-hand" x1="150" y1="150" x2="${150+65*Math.sin(hourAngle*Math.PI/180)}" y2="${150-65*Math.cos(hourAngle*Math.PI/180)}" onpointerdown="startClockHand(event,'hour')"/><line class="minute-hand" x1="150" y1="150" x2="${150+94*Math.sin(minuteAngle*Math.PI/180)}" y2="${150-94*Math.cos(minuteAngle*Math.PI/180)}" onpointerdown="startClockHand(event,'minute')"/><circle class="clock-pin" cx="150" cy="150" r="8"/></svg><p class="selected-coordinate">Selected time: <strong>${String(h||12).padStart(2,"0")}:${String(m||0).padStart(2,"0")}</strong></p></div>`;
+}
+window.startClockHand=(e,hand)=>{e.preventDefault();clockState.dragging=hand;e.currentTarget.setPointerCapture?.(e.pointerId);};
+window.moveClockHand=e=>{
+  if(!clockState.dragging)return;const svg=e.currentTarget,r=svg.getBoundingClientRect(),x=(e.clientX-r.left)/r.width*300-150,y=(e.clientY-r.top)/r.height*300-150;
+  let deg=(Math.atan2(x,-y)*180/Math.PI+360)%360;
+  const current=String(state.interactiveAnswers[state.index]||"12:00").split(":").map(Number);
+  let h=current[0]||12,m=current[1]||0;
+  if(clockState.dragging==="minute")m=(Math.round(deg/30)*5)%60;else h=(Math.round(deg/30)%12)||12;
+  state.interactiveAnswers[state.index]=`${h}:${String(m).padStart(2,"0")}`;renderQuestion();clockState.dragging=clockState.dragging;
+};
+window.endClockHand=()=>clockState.dragging=null;
+function clockAnswer(){return state.interactiveAnswers[state.index]||null;}
+
+function angleMarkup(q){
+  const target=Number(q.answer)||60,selected=Number(state.interactiveAnswers[state.index]??q.angle_start??45);
+  const rad=selected*Math.PI/180,x=80+120*Math.cos(rad),y=160-120*Math.sin(rad);
+  return `<div class="angle-interaction"><svg class="angle-tool" viewBox="0 0 240 190"><path d="M20 160 A140 140 0 0 1 220 160" class="protractor"/><line x1="80" y1="160" x2="210" y2="160" class="angle-base"/><line x1="80" y1="160" x2="${x}" y2="${y}" class="angle-ray"/><circle cx="${x}" cy="${y}" r="13" class="angle-handle"/></svg><label>Move the ray: <strong>${selected}°</strong></label><input class="angle-slider" type="range" min="0" max="180" step="1" value="${selected}" oninput="setAngleValue(this.value)"></div>`;
+}
+window.setAngleValue=v=>{state.interactiveAnswers[state.index]=Number(v);renderQuestion();};
+
+
 function drawingMarkup(q){
   return `<div class="drawing-answer">
     <div class="drawing-instruction">Draw your answer directly on the image. You can draw more than one line.</div>
@@ -1232,7 +1444,17 @@ function renderQuestion(){
         ? pointGridMarkup(q)
         : q.type==="matching"
           ? matchingMarkup(q)
-          : q.type==="multipart"
+          : q.type==="fraction"
+            ? fractionAnswerMarkup("")
+            : q.type==="fraction_visual"
+              ? fractionVisualMarkup(q)
+              : q.type==="clock"
+                ? clockMarkup(q)
+                : q.type==="drag"
+                  ? dragMarkup(q)
+                  : q.type==="angle"
+                    ? angleMarkup(q)
+                    : q.type==="multipart"
         ? multipartMarkup(q)
         : isTimeQuestion(q)
           ? timeAnswerMarkup("")
@@ -1269,6 +1491,15 @@ function getStudentAnswer(q){
     return Array.isArray(v)?JSON.stringify(v):null;
   }
   if(q.type==="matching") return matchingAnswer(q);
+  if(q.type==="fraction") return readFractionAnswer("");
+  if(q.type==="fraction_visual"){
+    const d=Math.max(2,Number(q.denominator||String(q.answer||"").split("/")[1])||4);
+    const n=Number(state.interactiveAnswers[state.index]||0);
+    return n?`${n}/${d}`:null;
+  }
+  if(q.type==="clock") return clockAnswer();
+  if(q.type==="drag") return dragAnswer(q);
+  if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
   if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("");
   return ($("#answerInput")?.value||"").trim();
@@ -1286,32 +1517,38 @@ function interactiveIsCorrect(q,given){
     return actual.length===2 && Math.abs(actual[0]-expected[0])<1e-9 && Math.abs(actual[1]-expected[1])<1e-9;
   }
   if(q.type==="matching") return String(given)===expectedMatchingAnswer(q);
+  if(q.type==="clock") return normalise(given)===normalise(q.answer);
+  if(q.type==="drag") return Number(given)===Number(q.answer);
+  if(q.type==="angle") return Math.abs(Number(given)-Number(q.answer))<=Number(q.angle_tolerance||2);
+  if(q.type==="fraction_visual") return normalise(given)===normalise(q.answer);
   return isCorrect(given,q.answer);
 }
-window.checkAnswer=()=>{
+window.checkAnswer=async()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
   if(given===null) return alert(q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
-    const record={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:JSON.parse(given).preview};
-    state.attempts[state.index]=record;
-    app.innerHTML=shell(`
-      <div class="mission">
-        <div class="mascot">✏️</div>
-        <h1>Drawing saved</h1>
-        <div class="feedback learn">Your line drawing has been recorded. A teacher or parent can review it with the original diagram.</div>
-        <button class="btn green block" onclick="nextQuestion()">Next question</button>
-      </div>
-    `);
+    const parsed=JSON.parse(given);
+    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Checking the drawing…</h2><p class="muted">Numera is comparing the drawing with the task.</p></div>`,true);
+    try{
+      const mark=await api("/api/mark-drawing",{method:"POST",body:JSON.stringify({prompt:q.prompt,rubric:q.drawing_rubric||q.answer||"",source_image:q.visual_data_url||"",drawing_image:parsed.preview})});
+      const auto=mark.confidence>=0.72;
+      const record={question_index:state.index,first_answer:given,first_correct:auto?mark.correct:false,retries:0,mastered:auto?mark.correct:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:!auto,drawing_preview:parsed.preview,drawing_feedback:mark.feedback,drawing_confidence:mark.confidence};
+      state.attempts[state.index]=record;
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":"Next question"}</button></div>`,true);
+    }catch(err){
+      state.attempts[state.index]={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:parsed.preview};
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">Next question</button></div>`,true);
+    }
     return;
   }
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
   if(record.first_answer===null || record.first_answer===""){
     record.first_answer=given;
-    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","matching"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
+    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
-  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","matching"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
+  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
   } else renderIncorrect();
