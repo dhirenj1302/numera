@@ -162,6 +162,7 @@ function router() {
   const params = new URLSearchParams(query || "");
   if (path === "/") return renderLanding();
   if (path === "/teacher") return renderTeacher();
+  if (path === "/demo") return renderDemoAge();
   if (path === "/history") return renderHomeworkHistory();
   if (path === "/create") return renderUpload();
   if (path === "/review") return renderReview();
@@ -184,30 +185,59 @@ window.addEventListener("popstate",()=>{
 
 function renderLanding(){
   app.innerHTML = shell(`
-    <section class="hero">
-      <div class="small">NUMERA V0.1</div>
+    <section class="hero landing-hero">
+      <div class="small">NUMERA</div>
       <h1>Homework<br>that <span style="color:#34d399">teaches.</span></h1>
-      <p>Turn a photographed maths worksheet into an interactive quiz that marks, explains mistakes and helps children upgrade their score.</p>
+      <p>Numera turns ordinary maths worksheets into interactive lessons that mark answers, explain mistakes and help children try again until the idea makes sense.</p>
       <div class="row wrap" style="margin-top:22px">
         <a class="btn green" href="#/teacher">Create homework</a>
-        <button class="btn secondary" onclick="startDemo()">Try student demo</button>
+        <a class="btn secondary" href="#/demo">Try student demo</a>
       </div>
     </section>
-    <h2 class="section-title">Built for tomorrow’s homework</h2>
-    <div class="grid two">
-      <div class="card"><div class="icon">📷</div><h3>Scan worksheets</h3><p class="muted">Upload several printed pages at once.</p></div>
-      <div class="card"><div class="icon">✨</div><h3>Review the AI draft</h3><p class="muted">Correct wording, answers and hints before publishing.</p></div>
-      <div class="card"><div class="icon">🧠</div><h3>Learn from mistakes</h3><p class="muted">Hints, explanations and a similar practice question.</p></div>
-      <div class="card"><div class="icon">📈</div><h3>See original and mastery</h3><p class="muted">Teachers and parents see progress, not only correctness.</p></div>
-    </div>
+
+    <section class="paper-comparison">
+      <span class="paper-comparison-kicker">Better than paper homework</span>
+      <h2>Paper records an answer. Numera helps create understanding.</h2>
+      <p>On paper, a mistake may remain unnoticed until the work is marked later. Numera responds immediately with progressive clues, a clear explanation and another chance to improve. Parents and teachers can then see not only the final score, but which ideas the child understands and where support is still needed.</p>
+    </section>
   `);
 }
 
-window.startDemo = async () => {
+function renderDemoAge(){
+  const ages=[6,7,8,9,10,11];
+  app.innerHTML=shell(`
+    <section class="mobile-page-head demo-age-head">
+      <span class="step-chip">Student demo</span>
+      <h1>How old is the child?</h1>
+      <p class="muted">Numera will create a short maths demo at an appropriate level.</p>
+    </section>
+    <div class="card demo-age-card">
+      <div class="age-choice-grid">
+        ${ages.map(age=>`<button class="age-choice" onclick="startDemo(${age})"><strong>${age}</strong><span>years old</span></button>`).join("")}
+      </div>
+      <p class="small muted demo-age-note">The demo contains five questions and shows how Numera teaches, gives progressive hints and helps improve a score.</p>
+    </div>
+  `,true);
+}
+
+
+window.startDemo = async age => {
+  const selectedAge=Number(age);
+  if(!Number.isInteger(selectedAge) || selectedAge<6 || selectedAge>11){
+    location.hash="#/demo";
+    return;
+  }
   try {
-    const demo = await api("/api/demo", {method:"POST", body:"{}"});
+    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Preparing an age-${selectedAge} demo…</h2><p class="muted">Numera is choosing suitable questions.</p></div>`,true);
+    const demo = await api("/api/demo", {
+      method:"POST",
+      body:JSON.stringify({age:selectedAge})
+    });
     location.hash = `#/play?id=${demo.id}`;
-  } catch(e) { alert(e.message); }
+  } catch(e) {
+    alert(e.message);
+    location.hash="#/demo";
+  }
 };
 
 function renderTeacher(){
@@ -710,8 +740,11 @@ function questionEditor(q,i){
         ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
         <label class="confirm-check"><input type="checkbox" data-k="teacher_confirmed" ${q.teacher_confirmed?"checked":""}> I have checked this question and answer</label>
       </div>` : ""}
-      <div class="field"><label>Helpful hint</label><textarea data-k="hint" rows="2">${esc(q.hint||"")}</textarea></div>
-      <div class="field"><label>Worked explanation</label><textarea data-k="explanation" rows="3">${esc(q.explanation||"")}</textarea></div>
+      <div class="hint-editor">
+        <div class="hint-editor-heading"><strong>Progressive hint ladder</strong><span>Each level offers more support. Asking for help does not count as a wrong answer.</span></div>
+        ${questionHintTiers(q).map((hint,hi)=>`<div class="field hint-editor-field"><label>Hint ${hi+1}: ${esc(hintTierName(hi+1))}</label><textarea data-hint-i="${hi}" rows="${hi===3?3:2}">${esc(hint)}</textarea></div>`).join("")}
+      </div>
+      <div class="field"><label>Feedback after an incorrect submitted answer</label><textarea data-k="explanation" rows="3">${esc(q.explanation||"")}</textarea></div>
       <details class="advanced-fields"><summary>More teaching settings</summary><div class="field"><label>Topic</label><input data-k="topic" value="${esc(q.topic||state.draft.topic||"Mixed maths")}"></div><div class="field"><label>Similar practice question</label><input data-k="practice_prompt" value="${esc(q.practice_prompt||"")}"></div><div class="field"><label>Practice answer</label><input data-k="practice_answer" value="${esc(String(q.practice_answer??""))}"></div></details>
       <button type="button" class="btn danger block" onclick="deleteQuestion(${i})">Remove this question</button>
     </div>
@@ -742,13 +775,15 @@ function syncEditors(){
           ? el.checked
           : el.value;
     });
+    const editedHints=[...card.querySelectorAll("[data-hint-i]")].sort((a,b)=>Number(a.dataset.hintI)-Number(b.dataset.hintI)).map(el=>el.value.trim());
+    if(editedHints.length){q.hints=editedHints;q.hint=editedHints[0]||"";}
     if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>q.parts[pi][el.dataset.partK]=el.value);});}
   });
 }
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false,answer_unit:"",parts:[]});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",hints:["","","",""],explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false,answer_unit:"",parts:[]});
   renderReview();
 };
 
@@ -846,8 +881,8 @@ function renderJoin(){
   app.innerHTML=shell(`
     <div class="mission"><div class="mascot">🟢</div><h1>Welcome!</h1><p class="muted">${esc(state.homework.title)}</p></div>
     <div class="card">
-      <div class="field"><label>Child’s Numera username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. aaryan-j"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
-      <div class="field"><label>Child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Aaryan"></div>
+      <div class="field"><label>Child’s Numera username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. User123"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
+      <div class="field"><label>Child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Thomas"></div>
       <button class="btn green block" onclick="joinHomework()">Continue</button>
     </div>
     <p class="small muted" style="text-align:center">Use letters, numbers and hyphens only. Avoid a full legal name.</p>
@@ -1003,8 +1038,32 @@ function drawingAnswer(){
   });
 }
 
+
+function questionHintTiers(q){
+  const supplied=Array.isArray(q.hints)?q.hints.map(x=>String(x||"").trim()).filter(Boolean):[];
+  const first=String(q.hint||supplied[0]||"Look carefully at what the question is asking.").trim();
+  const explanation=String(q.explanation||"Break the problem into smaller steps and use the information given.").trim();
+  return [
+    first,
+    supplied[1]||"Which maths idea or operation would help you solve this?",
+    supplied[2]||"Split the problem into smaller steps and solve one step at a time.",
+    supplied[3]||explanation
+  ];
+}
+function hintTierName(level){
+  return ["","Small clue","Strategy clue","Step-by-step support","Show the method"][level]||"Hint";
+}
+function ensureAttemptRecord(){
+  if(state.attempts[state.index]) return state.attempts[state.index];
+  const record={question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
+  state.attempts[state.index]=record;
+  return record;
+}
+
 function renderQuestion(){
   const q=state.homework.questions[state.index], n=state.homework.questions.length;
+  const currentRecord=state.attempts[state.index];
+  if(currentRecord && !currentRecord.question_started_at) currentRecord.question_started_at=Date.now();
   const pct=(state.index/n)*100;
   const body=q.type==="multiple_choice"
     ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
@@ -1028,7 +1087,7 @@ function renderQuestion(){
       ${body}
       <button class="btn primary block" style="margin-top:18px" onclick="checkAnswer()">Check answer</button>
     </div>
-    <button class="btn ghost block" onclick="showHint()">💡 Show a hint</button>
+    <button class="btn ghost block hint-entry-btn" onclick="showHint()">💡 Need a small clue?</button>
   `);
   if(q.type==="drawing"){
     drawingState.strokes=[];
@@ -1056,7 +1115,7 @@ window.checkAnswer=()=>{
   if(given===null) return alert(q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
-    const record={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,requires_teacher_review:true,drawing_preview:JSON.parse(given).preview};
+    const record={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:JSON.parse(given).preview};
     state.attempts[state.index]=record;
     app.innerHTML=shell(`
       <div class="mission">
@@ -1068,7 +1127,7 @@ window.checkAnswer=()=>{
     `);
     return;
   }
-  const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false};
+  const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
   if(record.first_answer===null || record.first_answer===""){
     record.first_answer=given;
     record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):isCorrect(given,q.answer);
@@ -1083,21 +1142,41 @@ window.returnToCurrentQuestion = () => {
   renderQuestion();
 };
 
-window.showHint=()=>{
+window.showHint=(requestedLevel=null)=>{
   const q=state.homework.questions[state.index];
-  const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:true};
-  record.hint_used=true; state.attempts[state.index]=record;
-  const hint = q.hint || "Break the problem into smaller steps.";
+  const tiers=questionHintTiers(q);
+  const record=ensureAttemptRecord();
+  const previous=Math.max(0,Number(record.highest_hint_level)||0);
+  const level=Math.max(1,Math.min(4,requestedLevel||previous+1));
+  const now=Date.now();
+
+  record.hint_used=true;
+  record.highest_hint_level=Math.max(previous,level);
+  record.hint_count=(Number(record.hint_count)||0)+1;
+  if(!record.first_hint_at){
+    record.first_hint_at=now;
+    record.seconds_before_first_hint=Math.max(0,Math.round((now-(record.question_started_at||now))/1000));
+  }
+  record.hint_events ||= [];
+  record.hint_events.push({level,opened_at:new Date(now).toISOString(),seconds_from_question_start:Math.max(0,Math.round((now-(record.question_started_at||now))/1000))});
+  state.attempts[state.index]=record;
+
+  const hint=tiers[level-1];
+  const more=level<4;
+  const nextLabel=level===1?"Still stuck? Show a strategy clue":level===2?"Let’s break it into steps":"Show me the method";
+
   app.innerHTML=shell(`
-    <div class="card">
+    <div class="card hint-ladder-card">
       <div class="mascot" style="text-align:center">💡</div>
-      <h2>Here’s a clue</h2>
-      <div class="feedback hint">${esc(hint)}</div>
+      <span class="hint-tier-badge">Hint ${level} of 4 · ${hintTierName(level)}</span>
+      <h2>${level===1?"Here’s a small clue":hintTierName(level)}</h2>
+      <div class="feedback hint hint-tier-content">${formatMath(hint)}</div>
       ${voiceControl()}
-      <button class="btn green block" style="margin-top:10px" onclick="returnToCurrentQuestion()">← Back to the question</button>
+      <button class="btn green block" style="margin-top:12px" onclick="returnToCurrentQuestion()">← Back to the question</button>
+      ${more?`<div class="hint-more-separator"><span>Need more help?</span></div><button class="btn secondary block" onclick="showHint(${level+1})">${nextLabel}</button>`:`<p class="small muted hint-final-note">Try the question again. Asking for help is recorded as learning evidence, not as an incorrect answer.</p>`}
     </div>
   `,true);
-  if (state.voiceEnabled) setTimeout(() => speak(`Here is a clue. ${hint}`), 120);
+  if(state.voiceEnabled) setTimeout(()=>speak(`${hintTierName(level)}. ${hint}`),120);
 };
 function renderIncorrect(){
   const q=state.homework.questions[state.index];
@@ -1175,7 +1254,7 @@ window.nextQuestion=()=>{
 async function finishHomework(){
   const total=state.homework.questions.length;
   for(let i=0;i<total;i++){
-    if(!state.attempts[i]) state.attempts[i]={question_index:i,first_answer:"",first_correct:false,retries:0,mastered:false,hint_used:false};
+    if(!state.attempts[i]) state.attempts[i]={question_index:i,first_answer:null,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[]};
   }
 
   const autoMarked=state.attempts.filter(a=>!a.requires_teacher_review);

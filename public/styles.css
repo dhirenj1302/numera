@@ -272,3 +272,77 @@
 @media(min-width:620px){
   .understanding-hero{grid-template-columns:minmax(0,1fr) 260px;align-items:end}
 }
+
+.hint-entry-btn{border:1px solid #d9d1ff;background:#faf9ff;color:var(--purple)}
+.hint-ladder-card{max-width:720px;margin:0 auto}.hint-tier-badge{display:table;margin:0 auto 12px;padding:7px 11px;border-radius:999px;background:var(--purple-soft);color:var(--purple);font-size:12px;font-weight:900}.hint-tier-content{font-size:17px;line-height:1.6}.hint-more-separator{display:flex;align-items:center;gap:10px;margin:17px 0 10px;color:var(--muted);font-size:12px}.hint-more-separator:before,.hint-more-separator:after{content:"";height:1px;flex:1;background:var(--line)}.hint-final-note{margin:14px 4px 0;text-align:center;line-height:1.5}.hint-editor{display:grid;gap:10px;margin:12px 0;padding:14px;border:1px solid #d9d1ff;border-radius:16px;background:#faf9ff}.hint-editor-heading strong,.hint-editor-heading span{display:block}.hint-editor-heading span{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.45}.hint-editor-field{margin:0}
+
+
+.landing-hero{margin-bottom:18px}
+.paper-comparison{
+  padding:22px;
+  border:1px solid var(--line);
+  border-radius:24px;
+  background:#fff;
+  box-shadow:0 8px 28px rgba(20,31,84,.07);
+}
+.paper-comparison-kicker{
+  display:inline-block;
+  margin-bottom:9px;
+  color:var(--purple);
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.paper-comparison h2{
+  max-width:720px;
+  margin:0 0 12px;
+  font-size:clamp(24px,4vw,36px);
+  line-height:1.13;
+}
+.paper-comparison p{
+  max-width:780px;
+  margin:0;
+  color:var(--muted);
+  font-size:16px;
+  line-height:1.65;
+}
+.demo-age-card{max-width:680px;margin:0 auto}
+.age-choice-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.age-choice{
+  min-height:104px;
+  border:2px solid #e3defe;
+  border-radius:18px;
+  background:#faf9ff;
+  color:var(--navy);
+  cursor:pointer;
+}
+.age-choice strong{
+  display:block;
+  color:var(--purple);
+  font-size:34px;
+  line-height:1;
+}
+.age-choice span{
+  display:block;
+  margin-top:7px;
+  font-size:13px;
+  font-weight:700;
+}
+.age-choice:hover,.age-choice:focus{
+  border-color:var(--purple);
+  background:var(--purple-soft);
+  transform:translateY(-1px);
+}
+.demo-age-note{
+  margin:16px 4px 0;
+  text-align:center;
+  line-height:1.5;
+}
+@media(min-width:560px){
+  .age-choice-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
