@@ -14,7 +14,7 @@ const pageSchema = {
         additionalProperties:false,
         required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
         properties:{
-          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","matching","multipart"]},
+          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","matching","fraction","fraction_visual","drag","clock","angle","multipart"]},
           prompt:{type:"string"},
           answer:{type:"string"},
           options:{type:"array",items:{type:"string"}},
