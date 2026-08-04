@@ -1,9 +1,154 @@
-const json=(b,i={})=>Response.json(b,{...i,headers:{"Cache-Control":"no-store",...(i.headers||{})}});
-const clean=v=>String(v||"").trim().toLowerCase();
-async function digest(value){const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");}
-async function hashPin(pin,salt){return digest(`${salt}:${pin}`);}
-async function token(){return crypto.randomUUID()+crypto.randomUUID();}
-export async function onRequest(c){if(c.request.method==="POST")return post(c);if(c.request.method==="GET")return get(c);return json({error:"Method not allowed"},{status:405});}
-async function validSetter(db,u,t){return db.prepare("SELECT username,display_name FROM setters WHERE username=? AND session_token=? AND session_expires>CURRENT_TIMESTAMP").bind(clean(u),t).first();}
-async function post(c){try{const b=await c.request.json(),db=c.env.DB,a=b.action,u=clean(b.username);if(a==="create_setter"){if(!/^[a-z0-9][a-z0-9-]{2,23}$/.test(u)||!/^\d{4}$/.test(b.pin))return json({error:"Use a valid username and four-digit PIN."},{status:400});const salt=crypto.randomUUID(),h=await hashPin(b.pin,salt),t=await token();await db.prepare("INSERT INTO setters(username,display_name,pin_hash,pin_salt,session_token,session_expires) VALUES(?,?,?,?,?,datetime('now','+30 days'))").bind(u,String(b.display_name||"").trim(),h,salt,t).run();return json({username:u,display_name:b.display_name,token:t});}if(a==="login_setter"){const r=await db.prepare("SELECT * FROM setters WHERE username=?").bind(u).first();if(!r||await hashPin(b.pin,r.pin_salt)!==r.pin_hash)return json({error:"Username or PIN not recognised."},{status:401});const t=await token();await db.prepare("UPDATE setters SET session_token=?,session_expires=datetime('now','+30 days') WHERE username=?").bind(t,u).run();return json({username:u,display_name:r.display_name,token:t});}if(a==="add_student"){const setter=await validSetter(db,b.setter_username,b.token);if(!setter)return json({error:"Setter session expired."},{status:401});const su=clean(b.student_username);if(!/^[a-z0-9][a-z0-9-]{2,23}$/.test(su)||!/^\d{4}$/.test(b.pin))return json({error:"Use a valid student username and four-digit PIN."},{status:400});const salt=crypto.randomUUID(),h=await hashPin(b.pin,salt);await db.batch([db.prepare("INSERT INTO students(username,display_name,pin_hash,pin_salt) VALUES(?,?,?,?) ON CONFLICT(username) DO UPDATE SET display_name=excluded.display_name,pin_hash=excluded.pin_hash,pin_salt=excluded.pin_salt").bind(su,String(b.display_name||"").trim(),h,salt),db.prepare("INSERT OR IGNORE INTO setter_students(setter_username,student_username) VALUES(?,?)").bind(setter.username,su)]);return json({saved:true});}if(a==="login_student"){const r=await db.prepare("SELECT * FROM students WHERE username=?").bind(u).first();if(!r||!r.pin_hash||await hashPin(b.pin,r.pin_salt)!==r.pin_hash)return json({error:"Username or PIN not recognised."},{status:401});const t=await token();await db.prepare("UPDATE students SET session_token=?,session_expires=datetime('now','+30 days') WHERE username=?").bind(t,u).run();return json({username:u,display_name:r.display_name,token:t});}return json({error:"Unknown action."},{status:400});}catch(e){return json({error:e.message},{status:500});}}
-async function get(c){try{const u=new URL(c.request.url),db=c.env.DB,setter=await validSetter(db,u.searchParams.get("setter_username"),u.searchParams.get("token"));if(!setter)return json({error:"Setter session expired."},{status:401});const {results=[]}=await db.prepare("SELECT s.username,s.display_name,COUNT(sub.id) submission_count FROM setter_students ss JOIN students s ON s.username=ss.student_username LEFT JOIN submissions sub ON sub.student_username=s.username WHERE ss.setter_username=? GROUP BY s.username ORDER BY s.display_name").bind(setter.username).all();return json({setter,students:results});}catch(e){return json({error:e.message},{status:500});}}
+// functions/api/accounts.js
+// Setter (teacher) and student account creation, sign-in, and roster management.
+// POST actions: create_setter, login_setter, add_student, login_student
+// GET: list the students attached to a signed-in setter.
+
+import { json, clean, hashPin, sessionToken, validSetter } from "./_lib.js";
+
+const USERNAME_RE = /^[a-z0-9][a-z0-9-]{2,23}$/;
+const PIN_RE = /^\d{4}$/;
+const SESSION_WINDOW = "+30 days";
+
+export async function onRequest(context) {
+  const { method } = context.request;
+  if (method === "POST") return post(context);
+  if (method === "GET") return get(context);
+  return json({ error: "Method not allowed" }, { status: 405 });
+}
+
+async function post(context) {
+  try {
+    const body = await context.request.json();
+    const db = context.env.DB;
+    const action = body.action;
+    const username = clean(body.username);
+
+    if (action === "create_setter") {
+      return createSetter(db, body, username);
+    }
+    if (action === "login_setter") {
+      return loginSetter(db, body, username);
+    }
+    if (action === "add_student") {
+      return addStudent(db, body);
+    }
+    if (action === "login_student") {
+      return loginStudent(db, body, username);
+    }
+    return json({ error: "Unknown action." }, { status: 400 });
+  } catch (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+}
+
+async function createSetter(db, body, username) {
+  if (!USERNAME_RE.test(username) || !PIN_RE.test(body.pin)) {
+    return json({ error: "Use a valid username and four-digit PIN." }, { status: 400 });
+  }
+  const salt = crypto.randomUUID();
+  const pinHash = await hashPin(body.pin, salt);
+  const token = await sessionToken();
+
+  await db
+    .prepare(
+      `INSERT INTO setters
+        (username,display_name,pin_hash,pin_salt,session_token,session_expires)
+       VALUES (?,?,?,?,?,datetime('now',?))`
+    )
+    .bind(username, String(body.display_name || "").trim(), pinHash, salt, token, SESSION_WINDOW)
+    .run();
+
+  return json({ username, display_name: body.display_name, token });
+}
+
+async function loginSetter(db, body, username) {
+  const row = await db.prepare("SELECT * FROM setters WHERE username=?").bind(username).first();
+  if (!row || (await hashPin(body.pin, row.pin_salt)) !== row.pin_hash) {
+    return json({ error: "Username or PIN not recognised." }, { status: 401 });
+  }
+  const token = await sessionToken();
+  await db
+    .prepare("UPDATE setters SET session_token=?,session_expires=datetime('now',?) WHERE username=?")
+    .bind(token, SESSION_WINDOW, username)
+    .run();
+
+  return json({ username, display_name: row.display_name, token });
+}
+
+async function addStudent(db, body) {
+  const setter = await validSetter(db, body.setter_username, body.token);
+  if (!setter) return json({ error: "Setter session expired." }, { status: 401 });
+
+  const studentUsername = clean(body.student_username);
+  if (!USERNAME_RE.test(studentUsername) || !PIN_RE.test(body.pin)) {
+    return json({ error: "Use a valid student username and four-digit PIN." }, { status: 400 });
+  }
+
+  const salt = crypto.randomUUID();
+  const pinHash = await hashPin(body.pin, salt);
+
+  // Batch keeps the student upsert and the setter-student link atomic.
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO students (username,display_name,pin_hash,pin_salt)
+         VALUES (?,?,?,?)
+         ON CONFLICT(username) DO UPDATE SET
+           display_name=excluded.display_name,
+           pin_hash=excluded.pin_hash,
+           pin_salt=excluded.pin_salt`
+      )
+      .bind(studentUsername, String(body.display_name || "").trim(), pinHash, salt),
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO setter_students (setter_username,student_username) VALUES (?,?)"
+      )
+      .bind(setter.username, studentUsername)
+  ]);
+
+  return json({ saved: true });
+}
+
+async function loginStudent(db, body, username) {
+  const row = await db.prepare("SELECT * FROM students WHERE username=?").bind(username).first();
+  if (!row || !row.pin_hash || (await hashPin(body.pin, row.pin_salt)) !== row.pin_hash) {
+    return json({ error: "Username or PIN not recognised." }, { status: 401 });
+  }
+  const token = await sessionToken();
+  await db
+    .prepare("UPDATE students SET session_token=?,session_expires=datetime('now',?) WHERE username=?")
+    .bind(token, SESSION_WINDOW, username)
+    .run();
+
+  return json({ username, display_name: row.display_name, token });
+}
+
+async function get(context) {
+  try {
+    const url = new URL(context.request.url);
+    const db = context.env.DB;
+    const setter = await validSetter(
+      db,
+      url.searchParams.get("setter_username"),
+      url.searchParams.get("token")
+    );
+    if (!setter) return json({ error: "Setter session expired." }, { status: 401 });
+
+    const { results = [] } = await db
+      .prepare(
+        `SELECT s.username,s.display_name,COUNT(sub.id) submission_count
+         FROM setter_students ss
+         JOIN students s ON s.username=ss.student_username
+         LEFT JOIN submissions sub ON sub.student_username=s.username
+         WHERE ss.setter_username=?
+         GROUP BY s.username
+         ORDER BY s.display_name`
+      )
+      .bind(setter.username)
+      .all();
+
+    return json({ setter, students: results });
+  } catch (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+}

@@ -1,14 +1,10 @@
+import { json } from "./_lib.js";
 
 export async function onRequest(context){
   if(context.request.method==="POST") return create(context);
   if(context.request.method==="GET") return list(context);
-  return Response.json({error:"Method not allowed"},{status:405});
+  return json({error:"Method not allowed"},{status:405});
 }
-
-const json=(body,init={})=>Response.json(body,{
-  ...init,
-  headers:{"Cache-Control":"no-store",...(init.headers||{})}
-});
 
 const slug=value=>String(value||"")
   .toLowerCase()
@@ -40,30 +36,23 @@ function questionConcept(question,homework){
 
 function evidenceFromAttempt(attempt){
   if(attempt?.requires_teacher_review){
-    return {
-      evidence_score:0.50,
-      evidence_weight:0.20,
-      evidence_type:"teacher_review_pending",
-      understanding_state:"unverified"
-    };
+    return {evidence_score:0.50,evidence_weight:0.20,evidence_type:"teacher_review_pending",understanding_state:"unverified"};
   }
-
   const firstCorrect=attempt?.first_correct===true;
   const mastered=attempt?.mastered===true;
-  const hintUsed=attempt?.hint_used===true;
+  const level=Math.max(0,Math.min(4,Number(attempt?.highest_hint_level)||0));
   const retries=Math.max(0,Number(attempt?.retries)||0);
-
-  if(firstCorrect && !hintUsed){
-    return {evidence_score:1.00,evidence_weight:1.00,evidence_type:"independent_correct",understanding_state:"secure"};
-  }
-  if(firstCorrect && hintUsed){
-    return {evidence_score:0.82,evidence_weight:0.85,evidence_type:"correct_after_hint",understanding_state:"developing"};
+  if(firstCorrect){
+    const scores=[1.00,0.90,0.80,0.68,0.55];
+    const weights=[1.00,0.95,0.90,0.82,0.75];
+    const types=["independent_correct","correct_after_hint_1","correct_after_hint_2","correct_after_hint_3","correct_after_hint_4"];
+    return {evidence_score:scores[level],evidence_weight:weights[level],evidence_type:types[level],understanding_state:level<=1?"secure":"developing"};
   }
   if(mastered){
-    const score=Math.max(0.55,0.72-(retries*0.05));
-    return {evidence_score:score,evidence_weight:0.75,evidence_type:"mastered_after_feedback",understanding_state:"developing"};
+    const base=[0.72,0.68,0.62,0.55,0.45][level];
+    return {evidence_score:Math.max(0.35,base-(retries*0.04)),evidence_weight:0.75,evidence_type:level?`mastered_after_error_hint_${level}`:"mastered_after_feedback",understanding_state:"developing"};
   }
-  return {evidence_score:0.18,evidence_weight:0.90,evidence_type:"not_yet_mastered",understanding_state:"priority"};
+  return {evidence_score:0.18,evidence_weight:0.90,evidence_type:level?`not_yet_mastered_hint_${level}`:"not_yet_mastered",understanding_state:"priority"};
 }
 
 function nextReviewDate(score){
@@ -105,13 +94,18 @@ async function updateUnderstanding(context,{submissionId,homework,username,attem
         INSERT INTO learning_events
           (id,student_username,submission_id,homework_id,question_index,
            concept_key,evidence_type,evidence_score,evidence_weight,
-           first_correct,hint_used,retries,mastered,understanding_state)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           first_correct,hint_used,highest_hint_level,hint_count,
+           seconds_before_first_hint,retries,mastered,understanding_state)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
         eventId,username,submissionId,homework.id,i,
         concept.concept_key,evidence.evidence_type,evidence.evidence_score,
         evidence.evidence_weight,attempt.first_correct===true?1:0,
-        attempt.hint_used===true?1:0,Number(attempt.retries)||0,
+        attempt.hint_used===true?1:0,
+        Math.max(0,Math.min(4,Number(attempt.highest_hint_level)||0)),
+        Math.max(0,Number(attempt.hint_count)||0),
+        attempt.seconds_before_first_hint==null?null:Math.max(0,Number(attempt.seconds_before_first_hint)||0),
+        Number(attempt.retries)||0,
         attempt.mastered===true?1:0,evidence.understanding_state
       )
     );

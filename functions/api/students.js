@@ -1,3 +1,53 @@
-const json=(b,i={})=>Response.json(b,{...i,headers:{"Cache-Control":"no-store",...(i.headers||{})}});
-async function digest(v){const a=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v));return [...new Uint8Array(a)].map(x=>x.toString(16).padStart(2,"0")).join("");}
-export async function onRequestPost(c){try{const b=await c.request.json(),u=String(b.username||"").trim().toLowerCase(),db=c.env.DB,r=await db.prepare("SELECT * FROM students WHERE username=?").bind(u).first();if(!r)return json({error:"This student username has not been created by a setter."},{status:404});if(!r.pin_hash||await digest(`${r.pin_salt}:${b.pin}`)!==r.pin_hash)return json({error:"Student PIN not recognised."},{status:401});const hw=await db.prepare("SELECT setter_username FROM homeworks WHERE id=?").bind(b.homework_id).first();if(hw?.setter_username){const link=await db.prepare("SELECT 1 ok FROM setter_students WHERE setter_username=? AND student_username=?").bind(hw.setter_username,u).first();if(!link)return json({error:"This username is not attached to the account that set this homework."},{status:403});}return json({username:u,display_name:r.display_name});}catch(e){return json({error:e.message},{status:500});}}
+// functions/api/students.js
+// Student sign-in for a specific homework. Confirms the PIN and that the
+// student is attached to the setter who set the homework.
+
+import { json, clean, hashPin } from "./_lib.js";
+
+export async function onRequestPost(context) {
+  try {
+    const body = await context.request.json();
+    const username = clean(body.username);
+    const db = context.env.DB;
+
+    const student = await db
+      .prepare("SELECT * FROM students WHERE username=?")
+      .bind(username)
+      .first();
+    if (!student) {
+      return json(
+        { error: "This student username has not been created by a setter." },
+        { status: 404 }
+      );
+    }
+
+    if (!student.pin_hash || (await hashPin(body.pin, student.pin_salt)) !== student.pin_hash) {
+      return json({ error: "Student PIN not recognised." }, { status: 401 });
+    }
+
+    // If the homework belongs to a setter, the student must be linked to them.
+    const homework = await db
+      .prepare("SELECT setter_username FROM homeworks WHERE id=?")
+      .bind(body.homework_id)
+      .first();
+
+    if (homework?.setter_username) {
+      const link = await db
+        .prepare(
+          "SELECT 1 ok FROM setter_students WHERE setter_username=? AND student_username=?"
+        )
+        .bind(homework.setter_username, username)
+        .first();
+      if (!link) {
+        return json(
+          { error: "This username is not attached to the account that set this homework." },
+          { status: 403 }
+        );
+      }
+    }
+
+    return json({ username, display_name: student.display_name });
+  } catch (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+}

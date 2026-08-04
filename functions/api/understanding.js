@@ -1,8 +1,4 @@
-
-const json=(body,init={})=>Response.json(body,{
-  ...init,
-  headers:{"Cache-Control":"no-store",...(init.headers||{})}
-});
+import { json } from "./_lib.js";
 
 function band(score,confidence){
   if(confidence<0.75) return "insufficient_evidence";

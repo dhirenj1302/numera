@@ -1,5 +1,6 @@
-export async function onRequest(context){if(context.request.method==="GET")return get(context);if(context.request.method==="POST")return create(context);if(context.request.method==="PUT")return update(context);return Response.json({error:"Method not allowed"},{status:405});}
-const json=(b,i={})=>Response.json(b,{...i,headers:{"Cache-Control":"no-store",...(i.headers||{})}});
+import { json } from "./_lib.js";
+
+export async function onRequest(context){if(context.request.method==="GET")return get(context);if(context.request.method==="POST")return create(context);if(context.request.method==="PUT")return update(context);return json({error:"Method not allowed"},{status:405});}
 async function create(c){
   try{
     const b=await c.request.json();
