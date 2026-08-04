@@ -12,7 +12,7 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","parts"],
         properties:{
           type:{type:"string",enum:["number","time","multiple_choice","drawing","point","matching","fraction","fraction_visual","drag","clock","angle","multipart"]},
           prompt:{type:"string"},
@@ -38,7 +38,14 @@ const pageSchema = {
           grid_step:{type:"number"},
           matching_left:{type:"array",items:{type:"string"}},
           matching_right:{type:"array",items:{type:"string"}},
-          matching_pairs:{type:"array",items:{type:"string"}}, parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
+          matching_pairs:{type:"array",items:{type:"string"}},
+          denominator:{type:"integer"},
+          drag_item_count:{type:"integer"},
+          clock_start:{type:"string"},
+          angle_start:{type:"number"},
+          angle_tolerance:{type:"number"},
+          drawing_rubric:{type:"string"},
+          parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
         }
       }
     }
@@ -180,7 +187,21 @@ For every complete visible question:
 7. If a printed question contains separately answerable parts such as (a) and (b), use type=multipart and create one parts item for each printed part in order. Each part needs its own prompt, answer, answer_unit and type. Do not merge separate answers. Use type=time whenever the correct answer is a clock time written with a colon, such as 3:07 or 14:35. Store the answer in H:MM or HH:MM format. Use type=drawing where the pupil must draw a line, line of symmetry, matching connection, route, reflection line or other answer directly on the diagram. For drawing questions, set answer to "teacher review", leave practice_prompt and practice_answer empty, and describe the expected drawing briefly in answer_working. Use type=number for other typed answers and multiple_choice only where printed choices exist or are genuinely useful.
 8. A question referring to a pictogram, graph, table, grid, clock, shape, diagram, number line, chart or picture MUST have needs_visual=true. For pictograms, visual_bbox must include the complete pictogram, all row labels and the entire key. For graphs and diagrams, include every axis, label, dimension and legend needed to answer. Prefer a box that is slightly too large rather than too small.
 9. For every pictogram, chart, table or image-counting question, set requires_teacher_check=true. Write the complete counting calculation in answer_working, for example "Age 10: 9 full symbols × 2 children = 18". Count symbols one by one and apply the key explicitly. For ordinary text-only arithmetic set requires_teacher_check=false. Drawing questions also require teacher check.
-10. If any item is too unclear, omit it and explain briefly in warning.
+18. Set requires_teacher_check=true for every drawing, point or matching question.
+19. Every returned question must include every schema field. For fields that do not apply, use these neutral values:
+- point_answer: [0,0]
+- grid_bounds: [0,0,0,0]
+- grid_step: 0
+- matching_left, matching_right and matching_pairs: []
+- denominator: 0
+- drag_item_count: 0
+- clock_start: ""
+- angle_start: 0
+- angle_tolerance: 0
+- drawing_rubric: ""
+- parts: []
+Only populate these fields with meaningful values when the selected question type uses them.
+20. If any item is too unclear, omit it and explain briefly in warning.
 11. Set answer_unit to the unit requested by the printed answer line, such as ml, cm, minutes, children or £; use an empty string if unitless. Do not include the unit inside a numeric answer. 12. Return questions in exact top-to-bottom page order. Do not include pupil names.`;
 
   const response=await fetch("https://api.openai.com/v1/responses",{
