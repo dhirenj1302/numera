@@ -12,9 +12,9 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","parts"],
         properties:{
-          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","matching","fraction","fraction_visual","drag","clock","angle","multipart"]},
+          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","coordinate","matching","fraction","fraction_visual","drag","clock","angle","multipart"]},
           prompt:{type:"string"},
           answer:{type:"string"},
           options:{type:"array",items:{type:"string"}},
@@ -34,6 +34,7 @@ const pageSchema = {
           requires_teacher_check:{type:"boolean"},
           answer_working:{type:"string"}, answer_unit:{type:"string"},
           point_answer:{type:"array",minItems:2,maxItems:2,items:{type:"number"}},
+          coordinate_answer:{type:"array",minItems:2,maxItems:2,items:{type:"number"}},
           grid_bounds:{type:"array",minItems:4,maxItems:4,items:{type:"number"}},
           grid_step:{type:"number"},
           matching_left:{type:"array",items:{type:"string"}},
@@ -190,6 +191,7 @@ For every complete visible question:
 18. Set requires_teacher_check=true for every drawing, point or matching question.
 19. Every returned question must include every schema field. For fields that do not apply, use these neutral values:
 - point_answer: [0,0]
+- coordinate_answer: [0,0]
 - grid_bounds: [0,0,0,0]
 - grid_step: 0
 - matching_left, matching_right and matching_pairs: []
