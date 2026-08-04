@@ -881,12 +881,13 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
       ${q.type==="multipart"?`<div class="multipart-editor"><div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div></div>`).join("")}</div>`:""}
 
+      ${q.type==="coordinate"?`<div class="interaction-editor"><strong>Coordinate-answer setup</strong><div class="field"><label>Correct coordinate</label><input data-k="coordinate_answer" value="${esc(Array.isArray(q.coordinate_answer)?JSON.stringify(q.coordinate_answer):String(q.coordinate_answer||q.answer||"[0,0]"))}" placeholder="[3, 2]"></div><p class="small muted">Students will see separate x and y boxes.</p></div>`:""}
       ${q.type==="point"?`<div class="interaction-editor">
         <strong>Coordinate-grid setup</strong>
         <div class="field-row-mobile">
@@ -903,7 +904,7 @@ function questionEditor(q,i){
       </div>`:""}
 
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
-      ${(q.requires_teacher_check || ["drawing","point","matching"].includes(q.type)) ? `<div class="teacher-check-card">
+      ${(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
         <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
         ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
@@ -952,7 +953,7 @@ function syncEditors(){
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
-  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",hints:["","","",""],explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false,answer_unit:"",parts:[],point_answer:[0,0],grid_bounds:[-5,5,-5,5],grid_step:1,matching_left:[],matching_right:[],matching_pairs:[]});
+  state.draft.questions.push({type:"number",prompt:"",answer:"",options:[],hint:"",hints:["","","",""],explanation:"",topic:state.draft.topic,practice_prompt:"",practice_answer:"",needs_visual:false,visual_bbox:[0,0,0,0],visual_data_url:"",page_index:0,page_number:1,source_label:"Manual question",ai_visual_bbox:[0,0,1000,1000],visual_user_box:null,visual_user_adjusted:false,requires_teacher_check:false,answer_working:"",teacher_confirmed:false,answer_unit:"",parts:[],point_answer:[0,0],coordinate_answer:[0,0],grid_bounds:[-5,5,-5,5],grid_step:1,matching_left:[],matching_right:[],matching_pairs:[]});
   renderReview();
 };
 
@@ -965,6 +966,7 @@ window.publishHomework = async () => {
     if(!String(q.prompt||"").trim()) return true;
     if(q.type==="drawing") return false;
     if(q.type==="point") return parseNumberList(q.point_answer,parseNumberList(q.answer,[])).length!==2;
+    if(q.type==="coordinate") return parseNumberList(q.coordinate_answer,parseNumberList(q.answer,[])).length!==2;
     if(q.type==="matching") return !parseStringList(q.matching_left).length || parseStringList(q.matching_left).length!==parseStringList(q.matching_right).length || parseStringList(q.matching_pairs).length!==parseStringList(q.matching_left).length;
     if(q.type==="multipart"){
       return !(q.parts?.length>1) || q.parts.some(p=>
@@ -975,7 +977,7 @@ window.publishHomework = async () => {
     }
     return String(q.answer??"").trim()==="";
   })) return alert("Every part of a multi-part question must have its own wording and correct answer before publishing.");
-  const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || ["drawing","point","matching"].includes(q.type)) && !q.teacher_confirmed);
+  const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) && !q.teacher_confirmed);
   if(unchecked>=0){
     alert(`Please open Question ${unchecked+1} and confirm that you have checked its visual and answer.`);
     document.querySelector(`[data-i="${unchecked}"]`)?.setAttribute("open","");
@@ -1157,6 +1159,24 @@ function parseStringList(value){
   if(Array.isArray(value)) return value.map(String);
   return String(value||"").split(/\s*\|\s*|\s*,\s*/).map(x=>x.trim()).filter(Boolean);
 }
+function coordinateAnswerConfig(q){
+  const expected=parseNumberList(q.coordinate_answer,parseNumberList(q.answer,[0,0]));
+  return {answer:[expected[0]??0,expected[1]??0]};
+}
+function coordinateAnswerMarkup(q){
+  const existing=state.interactiveAnswers[state.index];
+  const xValue=Array.isArray(existing)&&existing[0]!=null?existing[0]:"";
+  const yValue=Array.isArray(existing)&&existing[1]!=null?existing[1]:"";
+  return `<div class="coordinate-answer-card"><div class="coordinate-answer-title">Enter the coordinates</div><div class="coordinate-pair-input"><span class="coordinate-bracket">(</span><div class="coordinate-field"><label for="coordinateX">x</label><input id="coordinateX" inputmode="decimal" value="${esc(String(xValue))}" placeholder="x" oninput="saveCoordinateInput()"></div><span class="coordinate-comma">,</span><div class="coordinate-field"><label for="coordinateY">y</label><input id="coordinateY" inputmode="decimal" value="${esc(String(yValue))}" placeholder="y" oninput="saveCoordinateInput()"></div><span class="coordinate-bracket">)</span></div><p class="small muted coordinate-help">Enter x first, then y.</p></div>`;
+}
+window.saveCoordinateInput=()=>{
+  const x=$("#coordinateX")?.value.trim(),y=$("#coordinateY")?.value.trim();
+  state.interactiveAnswers[state.index]=[x===""?null:Number(x),y===""?null:Number(y)];
+};
+function coordinateTypedAnswer(){
+  saveCoordinateInput(); const v=state.interactiveAnswers[state.index];
+  return Array.isArray(v)&&Number.isFinite(v[0])&&Number.isFinite(v[1])?JSON.stringify(v):null;
+}
 function pointConfig(q){
   const bounds=parseNumberList(q.grid_bounds,[-5,5,-5,5]);
   const answer=parseNumberList(q.point_answer,parseNumberList(q.answer,[0,0]));
@@ -1188,29 +1208,22 @@ function svgToCoordinate(clientX,clientY,svg,c,size=320,pad=28){
 }
 function pointGridMarkup(q){
   const c=pointConfig(q),size=320,pad=28;
-  let lines="",labels="";
+  let lines="",labels="",dots="";
+  const origin=coordinateToSvg(0,0,c,size,pad);
   for(let x=Math.ceil(c.xmin/c.step)*c.step;x<=c.xmax+1e-9;x+=c.step){
-    const p=coordinateToSvg(x,0,c,size,pad);
-    const major=Math.abs(x)<1e-9;
+    const p=coordinateToSvg(x,0,c,size,pad),major=Math.abs(x)<1e-9;
     lines+=`<line x1="${p.sx}" y1="${pad}" x2="${p.sx}" y2="${size-pad}" class="${major?"axis":"grid-line"}"/>`;
-    if(!major && Number.isInteger(x)) labels+=`<text x="${p.sx}" y="${coordinateToSvg(0,0,c,size,pad).sy+17}" text-anchor="middle">${x}</text>`;
+    if(!major&&Number.isInteger(x))labels+=`<text x="${p.sx}" y="${origin.sy+17}" text-anchor="middle">${x}</text>`;
   }
   for(let y=Math.ceil(c.ymin/c.step)*c.step;y<=c.ymax+1e-9;y+=c.step){
-    const p=coordinateToSvg(0,y,c,size,pad);
-    const major=Math.abs(y)<1e-9;
+    const p=coordinateToSvg(0,y,c,size,pad),major=Math.abs(y)<1e-9;
     lines+=`<line x1="${pad}" y1="${p.sy}" x2="${size-pad}" y2="${p.sy}" class="${major?"axis":"grid-line"}"/>`;
-    if(!major && Number.isInteger(y)) labels+=`<text x="${coordinateToSvg(0,0,c,size,pad).sx-10}" y="${p.sy+4}" text-anchor="end">${y}</text>`;
+    if(!major&&Number.isInteger(y))labels+=`<text x="${origin.sx-10}" y="${p.sy+4}" text-anchor="end">${y}</text>`;
   }
+  for(let x=Math.ceil(c.xmin/c.step)*c.step;x<=c.xmax+1e-9;x+=c.step){for(let y=Math.ceil(c.ymin/c.step)*c.step;y<=c.ymax+1e-9;y+=c.step){const p=coordinateToSvg(x,y,c,size,pad);dots+=`<circle cx="${p.sx}" cy="${p.sy}" r="3.5" class="grid-point-dot"/>`;}}
   const selected=state.interactiveAnswers[state.index];
   const marker=Array.isArray(selected)?coordinateToSvg(selected[0],selected[1],c,size,pad):null;
-  return `<div class="point-interaction">
-    <div class="drawing-instruction">Tap the correct point on the grid.</div>
-    <svg id="pointGrid" class="coordinate-grid" viewBox="0 0 ${size} ${size}" onclick="selectGridPoint(event)">
-      ${lines}${labels}
-      ${marker?`<circle cx="${marker.sx}" cy="${marker.sy}" r="9" class="point-marker"/><circle cx="${marker.sx}" cy="${marker.sy}" r="16" class="point-marker-halo"/>`:""}
-    </svg>
-    <div class="selected-coordinate">${marker?`Selected: <strong>(${selected[0]}, ${selected[1]})</strong>`:"No point selected yet"}</div>
-  </div>`;
+  return `<div class="point-interaction"><div class="drawing-instruction">Tap the correct point on the grid.</div><svg id="pointGrid" class="coordinate-grid" viewBox="0 0 ${size} ${size}" onclick="selectGridPoint(event)">${lines}${labels}${dots}${marker?`<circle cx="${marker.sx}" cy="${marker.sy}" r="15" class="selected-point-halo"/><circle cx="${marker.sx}" cy="${marker.sy}" r="8" class="selected-point-green"/>`:""}</svg><div class="selected-coordinate">${marker?`Selected: <strong>(${selected[0]}, ${selected[1]})</strong>`:"No point selected yet"}</div></div>`;
 }
 window.selectGridPoint=event=>{
   const q=state.homework.questions[state.index],svg=event.currentTarget,c=pointConfig(q);
@@ -1444,7 +1457,9 @@ function renderQuestion(){
       ? drawingMarkup(q)
       : q.type==="point"
         ? pointGridMarkup(q)
-        : q.type==="matching"
+        : q.type==="coordinate"
+          ? coordinateAnswerMarkup(q)
+          : q.type==="matching"
           ? matchingMarkup(q)
           : q.type==="fraction"
             ? fractionAnswerMarkup("")
@@ -1492,6 +1507,7 @@ function getStudentAnswer(q){
     const v=state.interactiveAnswers[state.index];
     return Array.isArray(v)?JSON.stringify(v):null;
   }
+  if(q.type==="coordinate") return coordinateTypedAnswer();
   if(q.type==="matching") return matchingAnswer(q);
   if(q.type==="fraction") return readFractionAnswer("");
   if(q.type==="fraction_visual"){
@@ -1518,6 +1534,7 @@ function interactiveIsCorrect(q,given){
     const expected=pointConfig(q).answer;
     return actual.length===2 && Math.abs(actual[0]-expected[0])<1e-9 && Math.abs(actual[1]-expected[1])<1e-9;
   }
+  if(q.type==="coordinate"){const actual=parseNumberList(given,[]),expected=coordinateAnswerConfig(q).answer;return actual.length===2&&Math.abs(actual[0]-expected[0])<1e-9&&Math.abs(actual[1]-expected[1])<1e-9;}
   if(q.type==="matching") return String(given)===expectedMatchingAnswer(q);
   if(q.type==="clock") return normalise(given)===normalise(q.answer);
   if(q.type==="drag") return Number(given)===Number(q.answer);
@@ -1527,7 +1544,7 @@ function interactiveIsCorrect(q,given){
 }
 window.checkAnswer=async()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null) return alert(q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given===null) return alert(q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const parsed=JSON.parse(given);
@@ -1547,10 +1564,10 @@ window.checkAnswer=async()=>{
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
   if(record.first_answer===null || record.first_answer===""){
     record.first_answer=given;
-    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
+    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
-  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
+  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
   } else renderIncorrect();
