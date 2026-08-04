@@ -4,6 +4,7 @@ const state = {
   files: [],
   sourceImages: [],
   draft: null,
+  editingHomeworkId: null,
   homework: null,
   studentName: "",
   studentUsername: localStorage.getItem("numera:studentUsername") || "",
@@ -165,8 +166,8 @@ function router() {
   const [path, query] = hash.slice(1).split("?");
   const params = new URLSearchParams(query || "");
   if (path === "/") return renderLanding();
-  if (path === "/setter-access") return renderSetterAccess();
-  if (path === "/setter-dashboard") return renderSetterDashboard();
+  if (path === "/teacher-access") return renderSetterAccess();
+  if (path === "/teacher-dashboard") return renderSetterDashboard();
   if (path === "/students-manage") return renderStudentManager();
   if (path === "/review-access") return renderReviewAccess();
   if (path === "/review-hub") return renderReviewHub();
@@ -174,10 +175,11 @@ function router() {
   if (path === "/teacher") return renderTeacher();
   if (path === "/demo") return renderDemoAge();
   if (path === "/history") return renderHomeworkHistory();
+  if (path === "/edit-homework") return loadHomeworkForEditing(params.get("id"));
   if (path === "/create") return renderUpload();
   if (path === "/review") return renderReview();
   if (path === "/published") return renderPublished();
-  if (path === "/play") return loadHomework(params.get("id"), "play");
+  if (path === "/play") return loadHomework(params.get("id"), params.get("preview")==="1"?"preview":"play");
   if (path === "/results") return loadHomework(params.get("id"), "results");
   renderLanding();
 }
@@ -208,12 +210,12 @@ function renderLanding(){
     <section class="paper-comparison">
       <span class="paper-comparison-kicker">Start without an email address</span>
       <h2>Enter a username and name to set a homework task.</h2>
-      <p>For this early version, Numera does not ask for an email address. Setters create a username, display name and four-digit PIN, then create student usernames under their account. Students use a valid username to open assigned work, while parents and teachers can review the appropriate history.</p>
+      <p>For this early version, Numera does not ask for an email address. Teachers and parents who set work create a username, display name and four-digit PIN, then create student usernames under their account. Students use a valid username to open assigned work, while parents and teachers can review the appropriate history.</p>
     </section>
     <section class="workflow-grid">
-      <article><span>1</span><h3>Setter</h3><p>A teacher or parent creates student profiles, publishes work and owns the account.</p></article>
+      <article><span>1</span><h3>Teacher</h3><p>The person setting the work—usually a teacher, but sometimes a parent—creates student profiles, publishes tasks and reviews progress.</p></article>
       <article><span>2</span><h3>Student</h3><p>The child completes assigned work using a valid student username and PIN.</p></article>
-      <article><span>3</span><h3>Reviewer</h3><p>A parent reviews one child; a setter reviews every student and homework they manage.</p></article>
+      <article><span>3</span><h3>Reviewer</h3><p>A parent reviews one child; a teacher reviews every student and homework they manage.</p></article>
     </section>
   `);
 }
@@ -264,18 +266,18 @@ function validPin(pin){return /^\d{4}$/.test(String(pin||""));}
 function renderSetterAccess(){
   const existing=state.setterSession;
   app.innerHTML=shell(`
-    <section class="mobile-page-head"><span class="step-chip">Setter account</span><h1>${existing?`Welcome back, ${esc(existing.display_name)}`:"Set or manage homework"}</h1><p class="muted">No email is required. Keep the username and PIN somewhere safe.</p></section>
-    ${existing?`<div class="card"><button class="btn green block" onclick="location.hash='#/setter-dashboard'">Open setter dashboard</button><button class="btn ghost block" onclick="logoutSetter()">Use another account</button></div>`:`
+    <section class="mobile-page-head"><span class="step-chip">Teacher account</span><h1>${existing?`Welcome back, ${esc(existing.display_name)}`:"Create or manage homework"}</h1><p class="muted">No email is required. Keep the username and PIN somewhere safe.</p></section>
+    ${existing?`<div class="card"><button class="btn green block" onclick="location.hash='#/setter-dashboard'">Open teacher dashboard</button><button class="btn ghost block" onclick="logoutSetter()">Use another account</button></div>`:`
     <div class="access-grid">
       <form class="card" onsubmit="createSetter(event)">
-        <h2>Create a free setter account</h2>
+        <h2>Create a free teacher account</h2>
         <div class="field"><label>Username</label><input id="newSetterUsername" autocapitalize="none" placeholder="e.g. Teacher123"></div>
         <div class="field"><label>Name</label><input id="newSetterName" placeholder="e.g. Thomas"></div>
         ${pinInput("newSetterPin")}
         <button class="btn green block">Create account</button>
       </form>
       <form class="card" onsubmit="loginSetter(event)">
-        <h2>Return to an account</h2>
+        <h2>Return to a teacher account</h2>
         <div class="field"><label>Username</label><input id="setterUsername" autocapitalize="none"></div>
         ${pinInput("setterPin")}
         <button class="btn primary block">Sign in</button>
@@ -288,14 +290,14 @@ window.createSetter=async e=>{
   const username=$("#newSetterUsername").value.trim().toLowerCase(),display_name=$("#newSetterName").value.trim(),pin=$("#newSetterPin").value;
   if(!display_name||!validPin(pin))return alert("Enter a name and four-digit PIN.");
   try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_setter",username,display_name,pin})});
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_teacher",username,display_name,pin})});
     state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
   }catch(err){alert(err.message);}
 };
 window.loginSetter=async e=>{
   e.preventDefault();
   try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_setter",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_teacher",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
     state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/setter-dashboard";
   }catch(err){alert(err.message);}
 };
@@ -305,7 +307,7 @@ function renderSetterDashboard(){
   const s=state.setterSession;
   if(!s)return location.hash="#/setter-access";
   app.innerHTML=shell(`
-    <section class="mobile-page-head"><span class="step-chip">Setter dashboard</span><h1>Hello ${esc(s.display_name)}</h1><p class="muted">Create students, set work and review everyone attached to your account.</p></section>
+    <section class="mobile-page-head"><span class="step-chip">Teacher dashboard</span><h1>Hello ${esc(s.display_name)}</h1><p class="muted">Create students, set work and review everyone attached to your account.</p></section>
     <div class="grid">
       <button class="action-card" onclick="location.hash='#/students-manage'"><span class="icon">👥</span><span><strong>Students</strong><br><span class="small muted">Create and manage valid student usernames</span></span></button>
       <button class="action-card" onclick="location.hash='#/teacher'"><span class="icon">＋</span><span><strong>Set homework</strong><br><span class="small muted">Photograph or upload worksheet pages</span></span></button>
@@ -321,7 +323,7 @@ async function renderStudentManager(){
   try{
     const data=await api(`/api/accounts?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
     app.innerHTML=shell(`
-      <section class="mobile-page-head"><span class="step-chip">Setter students</span><h1>Student usernames</h1><p class="muted">Students must use one of these profiles to complete work assigned by this account.</p></section>
+      <section class="mobile-page-head"><span class="step-chip">Teacher students</span><h1>Student usernames</h1><p class="muted">Students must use one of these profiles to complete work assigned by this account.</p></section>
       <form class="card" onsubmit="addSetterStudent(event)">
         <h3>Add a student</h3>
         <div class="field-row-mobile"><div class="field"><label>Username</label><input id="managedStudentUsername" placeholder="e.g. User123"></div><div class="field"><label>Name</label><input id="managedStudentName" placeholder="e.g. Thomas"></div></div>
@@ -346,7 +348,7 @@ function renderReviewAccess(){
     <section class="mobile-page-head"><span class="step-chip">Review work</span><h1>Whose work are you reviewing?</h1></section>
     <div class="access-grid">
       <form class="card" onsubmit="reviewStudentLogin(event)"><h2>Parent or individual student</h2><div class="field"><label>Student username</label><input id="reviewStudentUsername"></div>${pinInput("reviewStudentPin","Student PIN")}<button class="btn green block">Open full history</button></form>
-      <div class="card"><h2>Teacher or setter</h2><p class="muted">Sign in to see every student and homework attached to the setter account.</p><a class="btn primary block" href="#/setter-access">Setter sign in</a></div>
+      <div class="card"><h2>Teacher or homework creator</h2><p class="muted">Sign in to see every student and homework attached to the teacher account.</p><a class="btn primary block" href="#/setter-access">Teacher sign in</a></div>
     </div>
   `,true);
 }
@@ -359,12 +361,12 @@ window.reviewStudentLogin=async e=>{
 };
 
 async function renderStudentHistory(username){
-  const setter=state.setterSession,reviewer=state.reviewerSession;
-  const allowed=(setter&&setter.token)||(reviewer&&reviewer.username===username);
+  const teacher=state.setterSession,reviewer=state.reviewerSession;
+  const allowed=(teacher&&teacher.token)||(reviewer&&reviewer.username===username);
   if(!allowed)return location.hash="#/review-access";
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading history…</h2></div>`,true);
   try{
-    const auth=setter?`setter_username=${encodeURIComponent(setter.username)}&token=${encodeURIComponent(setter.token)}`:`student_token=${encodeURIComponent(reviewer.token)}`;
+    const auth=teacher?`setter_username=${encodeURIComponent(teacher.username)}&token=${encodeURIComponent(teacher.token)}`:`student_token=${encodeURIComponent(reviewer.token)}`;
     const data=await api(`/api/review?student_username=${encodeURIComponent(username)}&${auth}`);
     app.innerHTML=shell(`
       <section class="mobile-page-head"><span class="step-chip">Student history</span><h1>${esc(data.student.display_name)}</h1><p class="muted">@${esc(data.student.username)} · ${data.summary.homework_count} completed</p></section>
@@ -380,7 +382,7 @@ async function renderReviewHub(){
   try{
     const data=await api(`/api/review?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
     app.innerHTML=shell(`
-      <section class="mobile-page-head"><span class="step-chip">Setter review</span><h1>Class overview</h1><p class="muted">View completion by student, by homework and as a class ranking.</p></section>
+      <section class="mobile-page-head"><span class="step-chip">Teacher review</span><h1>Class overview</h1><p class="muted">View completion by student, by homework and as a class ranking.</p></section>
       <div class="review-tabs"><button class="btn secondary" onclick="showReviewPanel('students')">By student</button><button class="btn secondary" onclick="showReviewPanel('homeworks')">By homework</button><button class="btn secondary" onclick="showReviewPanel('ranking')">Ranking</button></div>
       <div id="reviewStudents" class="review-panel">${data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">${st.completed} completed · ${st.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View</a></article>`).join("")||`<div class="empty card">No students yet.</div>`}</div>
       <div id="reviewHomeworks" class="review-panel hidden">${data.homeworks.map(h=>`<article class="history-card"><div><h3>${esc(h.title)}</h3><p class="muted">${h.completed}/${data.students.length} completed · ${h.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(h.id)}">Results</a></article>`).join("")||`<div class="empty card">No homework yet.</div>`}</div>
@@ -422,11 +424,56 @@ async function renderHomeworkHistory(){
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading past homeworks…</h2></div>`,true);
   try{
     const items=await api(`/api/homeworks?list=1&setter_username=${encodeURIComponent(state.setterSession?.username||"")}&t=${Date.now()}`);
-    app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Teacher library</span><h1>Past homeworks</h1><p class="muted">Open a homework to see everyone who completed it.</p></section><div class="history-list">${items.length?items.map(h=>`<article class="history-card"><div><span class="pill">${esc(h.year_group||"Year 4")}</span><h3>${esc(h.title)}</h3><p class="muted">${esc(h.topic||"Mixed maths")} · ${h.question_count} questions · ${h.submission_count} completed</p><p class="small muted">Created ${new Date(h.created_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p></div><div class="history-actions"><a class="btn primary" href="#/results?id=${h.id}">View results</a><a class="btn secondary" href="#/play?id=${h.id}">Open homework</a></div></article>`).join(""):`<div class="empty card">No published homeworks yet.</div>`}</div><a class="btn green block" href="#/create">＋ Create new homework</a>`,true);
+    app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Teacher library</span><h1>Past homeworks</h1><p class="muted">Open a homework to see everyone who completed it.</p></section><div class="history-list">${items.length?items.map(h=>`<article class="history-card"><div><span class="pill">${esc(h.year_group||"Year 4")}</span><h3>${esc(h.title)}</h3><p class="muted">${esc(h.topic||"Mixed maths")} · ${h.question_count} questions · ${h.submission_count} completed</p><p class="small muted">Created ${new Date(h.created_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p></div><div class="history-actions">
+  <a class="btn primary" href="#/edit-homework?id=${h.id}">✏ Edit homework</a>
+  <a class="btn secondary" href="#/results?id=${h.id}">📊 Results</a>
+  <a class="btn secondary" href="#/play?id=${h.id}&preview=1">👁 Student preview</a>
+</div></article>`).join(""):`<div class="empty card">No published homeworks yet.</div>`}</div><a class="btn green block" href="#/create">＋ Create new homework</a>`,true);
   }catch(err){app.innerHTML=shell(`<div class="card"><h2>Could not load past homeworks</h2><p>${esc(err.message)}</p></div>`,true);}
 }
 
+
+async function loadHomeworkForEditing(id){
+  const session=state.setterSession;
+  if(!session) return location.hash="#/setter-access";
+  if(!id) return location.hash="#/history";
+
+  app.innerHTML=shell(`
+    <div class="mission">
+      <div class="spinner"></div>
+      <h2>Opening homework editor…</h2>
+      <p class="muted">Loading every question and teaching setting.</p>
+    </div>
+  `,true);
+
+  try{
+    const homework=await api(
+      `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
+    );
+    state.editingHomeworkId=homework.id;
+    state.draft={
+      title:homework.title,
+      topic:homework.topic,
+      year_group:homework.year_group,
+      questions:normaliseHomeworkQuestions(homework).questions,
+      warning:"",
+      page_count:Number(homework.settings?.source_pages)||0
+    };
+    state.sourceImages=[];
+    renderReview();
+  }catch(error){
+    app.innerHTML=shell(`
+      <div class="card">
+        <h2>Homework could not be opened</h2>
+        <p>${esc(error.message)}</p>
+        <a class="btn secondary block" href="#/history">Return to homework library</a>
+      </div>
+    `,true);
+  }
+}
+
 function renderUpload(){
+  state.editingHomeworkId=null;
   state.files = [];
   state.sourceImages = [];
   app.innerHTML = shell(`
@@ -850,9 +897,11 @@ function renderReview(){
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   app.innerHTML = shell(`
     <section class="mobile-page-head">
-      <span class="step-chip">Step 3 of 3</span>
-      <h1>Check the questions</h1>
-      <p class="muted">Numera found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.</p>
+      <span class="step-chip">${state.editingHomeworkId?"Editing published homework":"Step 3 of 3"}</span>
+      <h1>${state.editingHomeworkId?"Edit homework questions":"Check the questions"}</h1>
+      <p class="muted">${state.editingHomeworkId
+        ? `Open each question one by one, make any changes, then save the homework.`
+        : `Numera found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.`}</p>
     </section>
     ${state.draft.warning ? `<div class="notice">${esc(state.draft.warning)}</div>` : ""}
     <div class="review-summary-card">
@@ -863,8 +912,8 @@ function renderReview(){
     <div id="questionEditors" class="question-editor-list">${qs}</div>
     <button class="btn secondary block" onclick="addQuestion()">＋ Add another question</button>
     <div class="mobile-sticky-action review-publish">
-      <button class="btn green block" onclick="publishHomework()">Publish homework</button>
-      <span class="small muted">You can change anything before publishing</span>
+      <button class="btn green block" onclick="publishHomework()">${state.editingHomeworkId?"Save changes":"Publish homework"}</button>
+      <span class="small muted">${state.editingHomeworkId?"Changes update this homework without changing its student link":"You can change anything before publishing"}</span>
     </div>
   `, true);
 }
@@ -985,7 +1034,7 @@ window.publishHomework = async () => {
   }
 
   const button=document.querySelector(".review-publish .btn");
-  if(button){button.disabled=true;button.textContent="Publishing…";}
+  if(button){button.disabled=true;button.textContent=state.editingHomeworkId?"Saving…":"Publishing…";}
   try {
     const payload={
       setter_username:state.setterSession?.username||null,
@@ -996,18 +1045,31 @@ window.publishHomework = async () => {
     };
     const payloadBytes=new Blob([JSON.stringify(payload)]).size;
     if(payloadBytes>4_500_000) throw new Error("This homework is too large to publish because it contains several detailed images. Remove unnecessary visual questions or publish fewer pages at once.");
-    const result = await api("/api/homeworks", {method:"POST", body:JSON.stringify(payload)});
-    state.homework={...result,title,topic,questions:state.draft.questions};
-    localStorage.setItem("numera:lastHomework", result.id);
-    location.hash="#/published";
+    let result;
+    if(state.editingHomeworkId){
+      result=await api("/api/homeworks",{
+        method:"PUT",
+        body:JSON.stringify({...payload,id:state.editingHomeworkId})
+      });
+      state.homework={...result,title,topic,questions:state.draft.questions};
+      const savedId=state.editingHomeworkId;
+      state.editingHomeworkId=null;
+      alert("Homework changes saved.");
+      location.hash=`#/edit-homework?id=${savedId}`;
+    }else{
+      result=await api("/api/homeworks",{method:"POST",body:JSON.stringify(payload)});
+      state.homework={...result,title,topic,questions:state.draft.questions};
+      localStorage.setItem("numera:lastHomework",result.id);
+      location.hash="#/published";
+    }
   } catch(e){
     app.innerHTML=shell(`
-      <section class="mobile-page-head"><span class="step-chip error-chip">Publish failed</span><h1>The homework was not saved</h1><p class="muted">Your reviewed questions are still in this browser.</p></section>
+      <section class="mobile-page-head"><span class="step-chip error-chip">${state.editingHomeworkId?"Save failed":"Publish failed"}</span><h1>${state.editingHomeworkId?"The changes were not saved":"The homework was not saved"}</h1><p class="muted">Your reviewed questions are still in this browser.</p></section>
       <div class="card extraction-error"><div class="mascot">🛠️</div><p><strong>${esc(e.message)}</strong></p><div class="photo-help"><div>• Check the D1 binding is named DB</div><div>• Confirm the homeworks table exists</div><div>• Try publishing fewer image-based questions</div></div></div>
       <button class="btn primary block" onclick="renderReview()">Return to questions</button>
     `,true);
   } finally {
-    if(button){button.disabled=false;button.textContent="Publish homework";}
+    if(button){button.disabled=false;button.textContent=state.editingHomeworkId?"Save changes":"Publish homework";}
   }
 };
 
@@ -1048,7 +1110,13 @@ async function loadHomework(id, mode){
   try{
     state.homework=normaliseHomeworkQuestions(await api(`/api/homeworks?id=${encodeURIComponent(id)}`));
     if(mode==="results") renderResults();
-    else renderJoin();
+    else if(mode==="preview"){
+      state.studentName="Teacher preview";
+      state.studentUsername="teacher-preview";
+      state.index=0;
+      state.attempts=[];
+      renderMission();
+    }else renderJoin();
   }catch(e){app.innerHTML=shell(`<div class="card"><h2>Homework unavailable</h2><p>${esc(e.message)}</p></div>`,true);}
 }
 
@@ -1927,7 +1995,7 @@ async function renderResults(){
   const avgO=complete?Math.round(submissions.reduce((a,s)=>a+s.original_score/s.total_questions*100,0)/complete):0;
   const avgM=complete?Math.round(submissions.reduce((a,s)=>a+s.mastery_score/s.total_questions*100,0)/complete):0;
   app.innerHTML=shell(`
-    <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><div class="row wrap"><button class="btn secondary" onclick="renderResults()">↻ Refresh</button><a class="btn secondary" href="#/play?id=${state.homework.id}">Open homework</a></div></div>
+    <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><div class="row wrap"><button class="btn secondary" onclick="renderResults()">↻ Refresh</button><a class="btn secondary" href="#/edit-homework?id=${state.homework.id}">✏ Edit homework</a></div></div>
     ${resultsError?`<div class="notice"><strong>Results could not be loaded:</strong> ${esc(resultsError)}</div>`:""}
     <div class="grid two">
       <div class="score"><span>Completed</span><strong>${complete}</strong><span>students</span></div>

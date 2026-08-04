@@ -414,3 +414,24 @@
 @media(min-width:720px){.workflow-grid{grid-template-columns:repeat(3,1fr)}.access-grid{grid-template-columns:1fr 1fr}}
 
 .coordinate-answer-card{max-width:520px;margin:14px auto;padding:18px;border:1px solid #d9d1ff;border-radius:20px;background:#faf9ff}.coordinate-answer-title{text-align:center;font-weight:900;margin-bottom:14px}.coordinate-pair-input{display:grid;grid-template-columns:auto minmax(80px,1fr) auto minmax(80px,1fr) auto;gap:10px;align-items:end}.coordinate-field label{display:block;text-align:center;color:var(--purple);font-weight:900}.coordinate-field input{width:100%;min-height:56px;text-align:center;font-size:24px;font-weight:900}.coordinate-bracket,.coordinate-comma{align-self:center;padding-bottom:8px;font-size:32px;font-weight:700}.coordinate-help{text-align:center;margin:12px 0 0}.grid-point-dot{fill:#98a2b3;opacity:.9;pointer-events:none}.selected-point-green{fill:#12b76a;stroke:#067647;stroke-width:2;pointer-events:none}.selected-point-halo{fill:rgba(18,183,106,.16);stroke:rgba(18,183,106,.35);stroke-width:5;pointer-events:none}
+
+
+.history-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+.history-actions .btn{
+  flex:1 1 145px;
+  text-align:center;
+  text-decoration:none;
+}
+@media(max-width:520px){
+  .history-actions{
+    width:100%;
+  }
+  .history-actions .btn{
+    flex-basis:100%;
+  }
+}
