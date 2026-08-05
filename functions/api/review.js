@@ -88,8 +88,85 @@ async function studentHistory(context, db, setter, studentUsername, url) {
         )
       : 0;
 
+  // Concept-level signal from the understanding model. These tables may be
+  // sparse until concept tagging is fully populated, so everything downstream
+  // treats an empty result as "not available yet" rather than inventing data.
+  const { results: concepts = [] } = await db
+    .prepare(
+      `SELECT scm.concept_key,
+              c.concept_name, c.topic, c.year_group,
+              scm.mastery_score, scm.confidence_score, scm.evidence_count
+       FROM student_concept_mastery scm
+       LEFT JOIN concepts c ON c.concept_key = scm.concept_key
+       WHERE scm.student_username = ?
+       ORDER BY scm.mastery_score ASC`
+    )
+    .bind(studentUsername)
+    .all()
+    .catch(() => ({ results: [] }));
+
+  // Aggregate learning-event signals that DO exist today: hint reliance and
+  // recovery-after-retry. misconception_tag is selected defensively; if the
+  // column does not exist yet the whole query fails and we fall back to empty.
+  const { results: eventAgg = [] } = await db
+    .prepare(
+      `SELECT
+         COUNT(*) total_events,
+         SUM(hint_used) hint_events,
+         SUM(CASE WHEN first_correct=0 AND mastered=1 THEN 1 ELSE 0 END) recovered_events,
+         SUM(CASE WHEN misconception_tag IS NOT NULL AND misconception_tag<>'' THEN 1 ELSE 0 END) tagged_events
+       FROM learning_events
+       WHERE student_username = ?`
+    )
+    .bind(studentUsername)
+    .all()
+    .catch(() => ({ results: [{ total_events: 0, hint_events: 0, recovered_events: 0, tagged_events: 0 }] }));
+
+  // Real misconception tallies — populated only once tagging exists. Empty today.
+  const { results: misconceptions = [] } = await db
+    .prepare(
+      `SELECT misconception_tag, concept_key, COUNT(*) occurrences
+       FROM learning_events
+       WHERE student_username = ?
+         AND misconception_tag IS NOT NULL AND misconception_tag <> ''
+       GROUP BY misconception_tag, concept_key
+       ORDER BY occurrences DESC`
+    )
+    .bind(studentUsername)
+    .all()
+    .catch(() => ({ results: [] }));
+
+  // Topics the child has actually met, weakest-first, from homework scores.
+  // Used to key age-typical watch-points to real content (not invented topics).
+  const topicRollup = {};
+  for (const r of results) {
+    const t = (r.topic || "General maths").trim();
+    if (!topicRollup[t]) topicRollup[t] = { topic: t, attempts: 0, mastery_sum: 0 };
+    topicRollup[t].attempts += 1;
+    topicRollup[t].mastery_sum += pct(r.mastery_score, r.total_questions);
+  }
+  const topics = Object.values(topicRollup)
+    .map(t => ({ topic: t.topic, attempts: t.attempts, avg_mastery: Math.round(t.mastery_sum / t.attempts) }))
+    .sort((a, b) => a.avg_mastery - b.avg_mastery);
+
+  const ev = eventAgg[0] || {};
+  const report = {
+    // Everything here is derived from real stored data. Fields that depend on
+    // concept tagging are reported as availability flags so the UI can show an
+    // honest "coming once tagging is on" state instead of a fabricated insight.
+    has_concept_data: concepts.length > 0,
+    has_misconception_tagging: Number(ev.tagged_events || 0) > 0,
+    hint_reliance_pct: ev.total_events ? Math.round((100 * (ev.hint_events || 0)) / ev.total_events) : null,
+    recovered_after_retry: Number(ev.recovered_events || 0),
+    weakest_topics: topics.slice(0, 3),
+    strongest_topics: [...topics].reverse().slice(0, 2),
+    weakest_concepts: concepts.slice(0, 4),
+    observed_misconceptions: misconceptions
+  };
+
   return json({
     student,
+    report,
     summary: {
       homework_count: results.length,
       average_original: avg("original_score"),
