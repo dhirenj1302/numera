@@ -81,11 +81,19 @@ const api = async (url, options={}) => {
 
 const uid = () => Math.random().toString(36).slice(2,8).toUpperCase();
 
-const shell = (content, back=false) => `
+const shell = (content, back=false) => {
+  // back can be:
+  //   false        -> no back button
+  //   true         -> default route-stack back (appBack)
+  //   "someFn()"   -> a custom handler, e.g. returnToCurrentQuestion(), used by
+  //                   in-place screens (correction, hint) that are NOT their own
+  //                   route and must return to the current question, not home.
+  const backHandler = back === true ? "appBack()" : (typeof back === "string" ? back : null);
+  return `
 <div class="app-shell">
   <header class="topbar">
     <div class="row">
-      ${back ? `<button class="btn ghost" onclick="appBack()" aria-label="Go back">←</button>` : ""}
+      ${backHandler ? `<button class="btn ghost" onclick="${backHandler}" aria-label="Go back">←</button>` : ""}
       <a class="brand-link" href="#/" aria-label="Numera home"><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></a>
     </div>
     <span class="pill green">Prototype</span>
@@ -93,6 +101,7 @@ const shell = (content, back=false) => `
   <main>${content}</main>
   <div class="footer-note">Every mistake is a step forward.</div>
 </div>`;
+};
 
 
 const NUMERA_STACK_KEY = "numera:routeStack";
@@ -727,15 +736,20 @@ window.openCropEditor = i => {
           </div>
         </div>
       </div>
-      <div class="crop-preview-panel">
-        <strong>What the student will see</strong>
+      <details class="crop-preview-panel">
+        <summary><strong>What the student will see</strong></summary>
         <div id="cropPreview" class="crop-preview-placeholder">Save the crop to update the preview</div>
-      </div>
+      </details>
       <footer class="crop-editor-actions">
-        <button class="btn secondary" type="button" onclick="resetCropToAI()">Reset AI crop</button>
-        <button class="btn secondary" type="button" onclick="useFullPageCrop()">Use full page</button>
-        <button class="btn danger" type="button" onclick="removeQuestionImage()">Remove image</button>
         <button class="btn primary block" type="button" onclick="saveCropEditor()">Save image</button>
+        <details class="crop-more-actions">
+          <summary class="btn secondary block">More options</summary>
+          <div class="crop-more-grid">
+            <button class="btn secondary" type="button" onclick="resetCropToAI()">Reset AI crop</button>
+            <button class="btn secondary" type="button" onclick="useFullPageCrop()">Use full page</button>
+            <button class="btn danger" type="button" onclick="removeQuestionImage()">Remove image</button>
+          </div>
+        </details>
       </footer>
     </div>`;
   document.body.appendChild(overlay);
@@ -1707,10 +1721,10 @@ window.checkAnswer=async()=>{
       const auto=mark.confidence>=0.72;
       const record={question_index:state.index,first_answer:given,first_correct:auto?mark.correct:false,retries:0,mastered:auto?mark.correct:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:!auto,drawing_preview:parsed.preview,drawing_feedback:mark.feedback,drawing_confidence:mark.confidence};
       state.attempts[state.index]=record;
-      app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":"Next question"}</button></div>`,true);
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":"Next question"}</button></div>`,"returnToCurrentQuestion()");
     }catch(err){
       state.attempts[state.index]={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:parsed.preview};
-      app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">Next question</button></div>`,true);
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">Next question</button></div>`,"returnToCurrentQuestion()");
     }
     return;
   }
@@ -1782,7 +1796,7 @@ function renderIncorrect(){
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
-  `,true);
+  `,"returnToCurrentQuestion()");
   if (state.voiceEnabled) {
     const practice = q.practice_prompt ? `Now try this similar question. ${q.practice_prompt}` : "Now try the original question again.";
     setTimeout(() => speak(`That was a good try. Mistakes help our brains grow. Here is a clue. ${hint}. Let us work through it. ${explanation}. ${practice}`), 120);

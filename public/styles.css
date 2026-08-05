@@ -73,8 +73,9 @@
   min-height:0;
   overflow:auto;
   padding:12px;
-  display:grid;
-  place-items:center;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
   touch-action:none;
 }
 .crop-image-wrap{
@@ -88,7 +89,12 @@
 .crop-image-wrap>img{
   display:block;
   max-width:100%;
-  max-height:58dvh;
+  /* Was 58dvh, which — combined with a fixed preview panel and a two-row button
+     footer — pushed the bottom of tall worksheets off-screen with no way to
+     reach it. The preview and secondary actions are now collapsed by default
+     (see below), so the image can use much more of the viewport, and the stage
+     scrolls to reach the very bottom of the page. */
+  max-height:78dvh;
   width:auto;
   height:auto;
   object-fit:contain;
@@ -128,26 +134,45 @@
 }
 .crop-handle-se{right:-16px;bottom:-16px;cursor:nwse-resize}
 .crop-preview-panel{
-  padding:10px 14px;
   border-top:1px solid rgba(255,255,255,.1);
   background:#151a3a;
 }
+.crop-preview-panel>summary{
+  padding:9px 14px;
+  cursor:pointer;
+  list-style:revert;
+}
+.crop-preview-panel>summary::-webkit-details-marker{display:inline-block}
+.crop-preview-panel[open] #cropPreview{padding:0 14px 10px}
 .crop-preview-panel strong{font-size:13px}
 .crop-preview-placeholder{margin-top:5px;color:#aeb7d7;font-size:12px}
 .crop-editor-actions{
-  display:grid;
-  grid-template-columns:1fr 1fr;
+  display:flex;
+  flex-direction:column;
   gap:8px;
   padding:10px 12px calc(10px + env(safe-area-inset-bottom));
   background:#fff;
 }
 .crop-editor-actions .btn{min-height:46px}
-.crop-editor-actions .btn.block{grid-column:1/-1}
+.crop-editor-actions .btn.block{width:100%}
+.crop-more-actions>summary{
+  list-style:none;
+  cursor:pointer;
+  text-align:center;
+}
+.crop-more-actions>summary::-webkit-details-marker{display:none}
+.crop-more-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:8px;
+}
+.crop-more-grid .btn.danger{grid-column:1/-1}
 @media(min-width:720px){
   .question-image-actions{grid-template-columns:auto auto;justify-content:start}
-  .crop-editor-actions{grid-template-columns:repeat(4,1fr)}
-  .crop-editor-actions .btn.block{grid-column:auto}
-  .crop-image-wrap>img{max-height:62vh}
+  .crop-more-grid{grid-template-columns:repeat(3,1fr)}
+  .crop-more-grid .btn.danger{grid-column:auto}
+  .crop-image-wrap>img{max-height:74vh}
 }
 
 
