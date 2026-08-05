@@ -1304,13 +1304,40 @@ function coordinateTypedAnswer(){
   return Array.isArray(v)&&Number.isFinite(v[0])&&Number.isFinite(v[1])?JSON.stringify(v):null;
 }
 function pointConfig(q){
-  const bounds=parseNumberList(q.grid_bounds,[-5,5,-5,5]);
   const answer=parseNumberList(q.point_answer,parseNumberList(q.answer,[0,0]));
+  const ax=answer[0]??0, ay=answer[1]??0;
+
+  // The AI often omits grid_bounds or returns the -5..5 placeholder, which is
+  // wrong for the many primary worksheets that use a 0..5 (first-quadrant) grid.
+  // Only trust supplied bounds when they actually contain the answer point and
+  // form a valid, non-placeholder range; otherwise derive bounds from the data.
+  const supplied=parseNumberList(q.grid_bounds,[]);
+  const isPlaceholder=supplied.length===4 &&
+    supplied[0]===-5 && supplied[1]===5 && supplied[2]===-5 && supplied[3]===5;
+  const contains=b=>b.length===4 &&
+    b[0]<b[1] && b[2]<b[3] &&
+    ax>=b[0] && ax<=b[1] && ay>=b[2] && ay<=b[3];
+
+  let xmin,xmax,ymin,ymax;
+  if(supplied.length===4 && !isPlaceholder && contains(supplied)){
+    [xmin,xmax,ymin,ymax]=supplied;
+  }else{
+    // Derive a clean grid that contains both the origin and the answer point.
+    // If nothing is negative, keep it first-quadrant (0-based), matching the
+    // common primary-school layout. Pad the max by 1 so the point isn't jammed
+    // into the corner, and round up to a tidy bound (min span of 5).
+    const padTo=v=>Math.max(5,Math.ceil((v+1)/1)*1);
+    xmin=Math.min(0,ax); ymin=Math.min(0,ay);
+    xmax=xmin<0 ? padTo(Math.max(Math.abs(ax),5)) : padTo(ax);
+    ymax=ymin<0 ? padTo(Math.max(Math.abs(ay),5)) : padTo(ay);
+    if(xmin<0) xmin=-xmax;
+    if(ymin<0) ymin=-ymax;
+  }
+
   return {
-    xmin:bounds[0]??-5,xmax:bounds[1]??5,
-    ymin:bounds[2]??-5,ymax:bounds[3]??5,
+    xmin,xmax,ymin,ymax,
     step:Math.max(.25,Number(q.grid_step)||1),
-    answer:[answer[0]??0,answer[1]??0]
+    answer:[ax,ay]
   };
 }
 function coordinateToSvg(x,y,c,size=320,pad=28){
