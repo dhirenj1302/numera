@@ -187,6 +187,7 @@ function router() {
   if (path === "/demo") return renderDemoAge();
   if (path === "/history") return renderHomeworkHistory();
   if (path === "/edit-homework") return loadHomeworkForEditing(params.get("id"));
+  if (path === "/reuse-homework") return loadHomeworkForReuse(params.get("id"));
   if (path === "/create") return renderUpload();
   if (path === "/review") return renderReview();
   if (path === "/published") return renderPublished();
@@ -596,6 +597,7 @@ async function renderHomeworkHistory(){
     const items=await api(`/api/homeworks?list=1&setter_username=${encodeURIComponent(state.setterSession?.username||"")}&t=${Date.now()}`);
     app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Teacher library</span><h1>Past homeworks</h1><p class="muted">Open a homework to see everyone who completed it.</p></section><div class="history-list">${items.length?items.map(h=>`<article class="history-card"><div><span class="pill">${esc(h.year_group||"Year 4")}</span><h3>${esc(h.title)}</h3><p class="muted">${esc(h.topic||"Mixed maths")} · ${h.question_count} questions · ${h.submission_count} completed</p><p class="small muted">Created ${new Date(h.created_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</p></div><div class="history-actions">
   <a class="btn primary" href="#/edit-homework?id=${h.id}">✏ Edit homework</a>
+  <a class="btn secondary" href="#/reuse-homework?id=${h.id}">♻ Set for another class</a>
   <a class="btn secondary" href="#/results?id=${h.id}">📊 Results</a>
   <a class="btn secondary" href="#/play?id=${h.id}&preview=1">👁 Student preview</a>
 </div></article>`).join(""):`<div class="empty card">No published homeworks yet.</div>`}</div><a class="btn green block" href="#/create">＋ Create new homework</a>`,true);
@@ -620,7 +622,7 @@ async function loadHomeworkForEditing(id){
     const homework=await api(
       `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
     );
-    state.editingHomeworkId=homework.id;
+    state.editingHomeworkId=homework.id;state.reusedFromTitle="";
     state.draft={
       title:homework.title,
       topic:homework.topic,
@@ -642,8 +644,66 @@ async function loadHomeworkForEditing(id){
   }
 }
 
+// Reuse: load an existing homework's questions into a BRAND-NEW draft so the
+// teacher can set the same work to another class. Deliberately does NOT set
+// editingHomeworkId — so publishing creates a new homework with its own id and
+// its own results, leaving the original (and its submissions) untouched. The
+// title is pre-suffixed so the two copies are easy to tell apart in the library.
+async function loadHomeworkForReuse(id){
+  const session=state.setterSession;
+  if(!session) return location.hash="#/teacher-signin";
+  if(!id) return location.hash="#/history";
+
+  app.innerHTML=shell(`
+    <div class="mission">
+      <div class="spinner"></div>
+      <h2>Setting up a fresh copy…</h2>
+      <p class="muted">Loading the questions so you can set this work for another class.</p>
+    </div>
+  `,true);
+
+  try{
+    const homework=await api(
+      `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
+    );
+    // New homework, not an edit of the old one.
+    state.editingHomeworkId=null;
+    state.reusedFromTitle=homework.title||"";
+    state.draft={
+      title:suggestReuseTitle(homework.title),
+      topic:homework.topic,
+      year_group:homework.year_group,
+      questions:normaliseHomeworkQuestions(homework).questions,
+      warning:"",
+      page_count:Number(homework.settings?.source_pages)||0
+    };
+    state.sourceImages=[];
+    renderReview();
+  }catch(error){
+    app.innerHTML=shell(`
+      <div class="card">
+        <h2>Homework could not be copied</h2>
+        <p>${esc(error.message)}</p>
+        <a class="btn secondary block" href="#/history">Return to homework library</a>
+      </div>
+    `,true);
+  }
+}
+
+// Suggest a distinct title for the reused copy. If the title already ends with a
+// "(copy)" or "(copy N)" suffix, bump the number so repeated reuse stays tidy.
+function suggestReuseTitle(title){
+  const base=String(title||"Year 4 Maths").trim();
+  const m=base.match(/^(.*?)\s*\(copy(?:\s*(\d+))?\)\s*$/i);
+  if(m){
+    const n=m[2]?Number(m[2])+1:2;
+    return `${m[1].trim()} (copy ${n})`;
+  }
+  return `${base} (copy)`;
+}
+
 function renderUpload(){
-  state.editingHomeworkId=null;
+  state.editingHomeworkId=null;state.reusedFromTitle="";
   state.files = [];
   state.sourceImages = [];
   app.innerHTML = shell(`
@@ -1079,6 +1139,7 @@ function renderReview(){
         : `Numera found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.`}</p>
     </section>
     ${state.draft.warning ? `<div class="notice">${esc(state.draft.warning)}</div>` : ""}
+    ${state.reusedFromTitle ? `<div class="notice reuse-banner"><strong>Fresh copy for a new class.</strong> This is a new homework based on "${esc(state.reusedFromTitle)}". Rename it below (and tweak anything you like), then publish — the original and its results stay untouched.</div>` : ""}
     <div class="review-summary-card">
       <div class="field"><label>Homework title</label><input id="title" value="${esc(state.draft.title || "Year 4 Maths")}"></div>
       <div class="field"><label>Main topic</label><input id="topic" value="${esc(state.draft.topic || "Mixed maths")}"></div>
@@ -1234,6 +1295,7 @@ window.publishHomework = async () => {
     }else{
       result=await api("/api/homeworks",{method:"POST",body:JSON.stringify(payload)});
       state.homework={...result,title,topic,questions:state.draft.questions};
+      state.reusedFromTitle="";
       localStorage.setItem("numera:lastHomework",result.id);
       location.hash="#/published";
     }
