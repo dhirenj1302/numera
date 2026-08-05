@@ -438,9 +438,112 @@ async function renderStudentHistory(username){
     app.innerHTML=shell(`
       <section class="mobile-page-head"><span class="step-chip">Student history</span><h1>${esc(data.student.display_name)}</h1><p class="muted">@${esc(data.student.username)} · ${data.summary.homework_count} completed</p></section>
       <div class="parent-summary-grid"><div class="mini-score"><span>Homeworks</span><strong>${data.summary.homework_count}</strong></div><div class="mini-score"><span>Average original</span><strong>${data.summary.average_original}%</strong></div><div class="mini-score mastery"><span>Average mastery</span><strong>${data.summary.average_mastery}%</strong></div></div>
+      ${studentReportMarkup(data)}
+      <h2 class="section-label">Completed homework</h2>
       <div class="history-list">${data.results.map(r=>`<article class="history-card"><div><h3>${esc(r.homework_title)}</h3><p class="muted">${esc(r.topic)} · ${r.original_percent}% original · ${r.mastery_percent}% mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(r.homework_id)}">Homework results</a></article>`).join("")||`<div class="empty card">No completed work yet.</div>`}</div>
     `,true);
   }catch(err){alert(err.message);location.hash="#/review-access";}
+}
+
+// Age-typical misconceptions, keyed to topic keywords. These are GENERAL and
+// clearly labelled as "common at this age" — never presented as a diagnosis of
+// this particular child. Once real per-child misconception tagging is live
+// (see report.observed_misconceptions), that real data is shown ABOVE this,
+// and this section stays only as supporting context.
+const AGE_TYPICAL_MISCONCEPTIONS={
+  fraction:[
+    {tag:"bigger denominator = bigger",note:"Many children think 1/4 is larger than 1/2 because 4 is larger than 2. Watch for reasoning about the bottom number as if it were a whole number."},
+    {tag:"adding denominators",note:"A very common slip is 1/4 + 1/4 = 2/8 — adding the bottoms as well as the tops."}
+  ],
+  decimal:[
+    {tag:"longer = larger",note:"Children often think 0.45 is bigger than 0.5 because it has more digits."},
+    {tag:"decimal point misalignment",note:"When adding decimals, watch for columns not lined up by place value."}
+  ],
+  "place value":[
+    {tag:"digit vs value",note:"Confusing the digit with its value — e.g. the 3 in 36 being treated as 'three' rather than 'thirty'."}
+  ],
+  multiplication:[
+    {tag:"place-value in columns",note:"In column multiplication, forgetting the place-value zero when multiplying by the tens digit."}
+  ],
+  division:[
+    {tag:"remainder handling",note:"Uncertainty about what to do with a remainder — dropping it, or not relating it back to the question."}
+  ],
+  time:[
+    {tag:"analogue–digital gaps",note:"Reading 'quarter to' / 'quarter past' and matching them to digital times is a frequent stumbling point."},
+    {tag:"minutes past 60",note:"Adding durations that cross an hour boundary (e.g. 9:25 + 17 min) often trips children up."}
+  ],
+  coordinate:[
+    {tag:"axis order (x,y)",note:"Plotting (2,3) as '3 along, 2 up' — reversing the order of the coordinates."},
+    {tag:"counting lines not spaces",note:"Counting grid lines rather than the steps between them."}
+  ],
+  fractions:[]
+};
+
+function ageTypicalFor(topics){
+  const seen=new Set(); const out=[];
+  for(const t of topics){
+    const key=(t.topic||"").toLowerCase();
+    for(const bank in AGE_TYPICAL_MISCONCEPTIONS){
+      if(key.includes(bank)){
+        for(const m of AGE_TYPICAL_MISCONCEPTIONS[bank]){
+          if(!seen.has(m.tag)){seen.add(m.tag);out.push({...m,topic:t.topic});}
+        }
+      }
+    }
+  }
+  return out.slice(0,4);
+}
+
+function studentReportMarkup(data){
+  const r=data.report;
+  if(!r||(data.summary.homework_count===0)){
+    return `<div class="report-card"><div class="report-head"><h2>Performance report</h2></div><div class="report-body"><p class="muted">Once ${esc(data.student.display_name)} completes some homework, a short performance report will appear here — highlighting strengths, areas to work on, and common things to look out for at this age.</p></div></div>`;
+  }
+
+  // --- Narrative built ONLY from real data ---
+  const name=esc((data.student.display_name||"").split(" ")[0]||"This pupil");
+  const bits=[];
+  const am=data.summary.average_mastery, ao=data.summary.average_original;
+  bits.push(`${name} has completed <strong>${data.summary.homework_count}</strong> homework${data.summary.homework_count===1?"":"s"}, averaging <strong>${am}%</strong> once given the chance to try again after feedback (${ao}% on first attempt).`);
+  if(am-ao>=8){bits.push(`The jump from ${ao}% to ${am}% is a good sign: ${name} tends to <strong>correct mistakes when given feedback and another go</strong>, which is exactly the behaviour Numera rewards.`);}
+  if(r.hint_reliance_pct!==null){
+    if(r.hint_reliance_pct>=50){bits.push(`Hints are used on around <strong>${r.hint_reliance_pct}%</strong> of questions — leaning on support quite often, which points to working near the edge of current understanding.`);}
+    else if(r.hint_reliance_pct>0){bits.push(`Hints are used on around <strong>${r.hint_reliance_pct}%</strong> of questions — a healthy amount of independent working.`);}
+  }
+  if(r.recovered_after_retry>0){bits.push(`On <strong>${r.recovered_after_retry}</strong> occasion${r.recovered_after_retry===1?"":"s"}, ${name} got a question wrong first but reached mastery after retrying — resilience worth praising.`);}
+
+  const strong=r.strongest_topics&&r.strongest_topics.length?`<div class="report-row good"><span class="report-k">Strongest so far</span><span>${r.strongest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
+  const weak=r.weakest_topics&&r.weakest_topics.length?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
+
+  // --- Real per-child misconceptions (only if tagging has populated them) ---
+  let observedBlock="";
+  if(r.has_misconception_tagging && r.observed_misconceptions.length){
+    observedBlock=`<div class="report-sub"><h3>Specific patterns seen in ${name}'s answers</h3>${r.observed_misconceptions.slice(0,4).map(m=>`<div class="mis-observed"><strong>${esc(m.misconception_tag)}</strong> — seen ${m.occurrences} time${m.occurrences===1?"":"s"}${m.concept_key?` in ${esc(m.concept_key)}`:""}.</div>`).join("")}</div>`;
+  }
+
+  // --- Age-typical watch-points, keyed to the topics actually attempted ---
+  const typical=ageTypicalFor(r.weakest_topics.length?r.weakest_topics:r.strongest_topics);
+  let typicalBlock="";
+  if(typical.length){
+    typicalBlock=`<div class="report-sub"><h3>Common at this age <span class="report-tag-note">general guidance, not specific to ${name}</span></h3>${typical.map(m=>`<div class="mis-typical"><strong>${esc(m.tag)}</strong> <span class="muted">(${esc(m.topic)})</span><br>${esc(m.note)}</div>`).join("")}</div>`;
+  }
+
+  // --- Honest status line about the deeper capability that's coming ---
+  const capNote = r.has_misconception_tagging
+    ? ""
+    : `<p class="report-cap-note">As ${name} completes more work, Numera will begin identifying the <em>specific</em> misconceptions behind individual mistakes — not just the topic — and show them here.</p>`;
+
+  return `
+    <div class="report-card">
+      <div class="report-head"><h2>Performance report</h2><span class="report-updated">to date</span></div>
+      <div class="report-body">
+        <p class="report-narrative">${bits.join(" ")}</p>
+        ${strong}${weak}
+        ${observedBlock}
+        ${typicalBlock}
+        ${capNote}
+      </div>
+    </div>`;
 }
 
 async function renderReviewHub(){

@@ -482,3 +482,23 @@
 .navigation-recovery .btn+.btn{margin-top:8px}
 .navigation-recovery p{margin:16px 0 0;word-break:break-all}
 @media(min-width:720px){.review-role-grid{grid-template-columns:1fr 1fr}}
+
+/* --- Student performance report (v2.5) --- */
+.section-label{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:22px 0 10px}
+.report-card{border:1px solid var(--line);border-radius:18px;overflow:hidden;margin:16px 0;background:#fff}
+.report-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:linear-gradient(135deg,#11152e,#232a52);color:#fff}
+.report-head h2{margin:0;font-size:16px}
+.report-updated{font-size:11px;color:#c2c8e6;text-transform:uppercase;letter-spacing:.5px}
+.report-body{padding:16px}
+.report-narrative{margin:0 0 14px;font-size:14.5px;line-height:1.55}
+.report-narrative strong{color:var(--purple,#6b4eff)}
+.report-row{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:9px 0;border-top:1px solid #f0f1f6;font-size:13.5px;align-items:baseline}
+.report-k{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.report-row.good .report-k{color:#12b76a}
+.report-row.watch .report-k{color:#f79009}
+.report-sub{margin-top:16px}
+.report-sub h3{font-size:13.5px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.report-tag-note{font-size:11px;font-weight:400;color:var(--muted);font-style:italic}
+.mis-observed{background:#efeaff;border-left:3px solid #6b4eff;border-radius:8px;padding:9px 11px;margin:6px 0;font-size:13px}
+.mis-typical{background:#fff4e5;border-left:3px solid #f79009;border-radius:8px;padding:9px 11px;margin:6px 0;font-size:13px;line-height:1.45}
+.report-cap-note{margin:14px 0 0;font-size:12.5px;color:var(--muted);font-style:italic;border-top:1px dashed var(--line);padding-top:11px}
