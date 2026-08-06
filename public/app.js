@@ -1247,6 +1247,27 @@ window.publishHomework = async () => {
   const title=$("#title").value.trim() || "Year 4 Maths";
   const topic=$("#topic").value.trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
+  // Multiple-choice needs a usable set of options, and the correct answer must
+  // be one of them — otherwise the child sees an empty choice list (the exact
+  // bug this fixes) or a set with no right answer. Check this first so the
+  // teacher gets a precise, question-specific message.
+  const badMc=state.draft.questions.findIndex(q=>{
+    if(q.type!=="multiple_choice") return false;
+    const opts=(q.options||[]).map(o=>String(o).trim()).filter(Boolean);
+    if(opts.length<2) return true;
+    return !opts.some(o=>o===String(q.answer??"").trim());
+  });
+  if(badMc>=0){
+    const q=state.draft.questions[badMc];
+    const opts=(q.options||[]).map(o=>String(o).trim()).filter(Boolean);
+    alert(
+      opts.length<2
+        ? `Question ${badMc+1} is set to multiple choice but has fewer than two answer choices. Add the choices (e.g. "12, 14, 16, 18") or change the answer type.`
+        : `Question ${badMc+1} is multiple choice but the correct answer isn't one of the choices. Add the correct answer to the list of choices.`
+    );
+    document.querySelector(`[data-i="${badMc}"]`)?.setAttribute("open","");
+    return;
+  }
   if(state.draft.questions.some(q=>{
     if(!String(q.prompt||"").trim()) return true;
     if(q.type==="drawing") return false;
@@ -1784,7 +1805,9 @@ function renderQuestion(){
   if(currentRecord && !currentRecord.question_started_at) currentRecord.question_started_at=Date.now();
   const pct=(state.index/n)*100;
   const body=q.type==="multiple_choice"
-    ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
+    ? ((q.options||[]).filter(o=>String(o).trim()).length>=2
+        ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
+        : `<div class="mc-fallback-note">Type your answer below.</div><input id="answerInput" class="answer-input" inputmode="numeric" autocomplete="off" placeholder="Your answer" value="${esc(state.selected||"")}" oninput="selectOption(this.value)">`)
     : q.type==="drawing"
       ? drawingMarkup(q)
       : q.type==="point"

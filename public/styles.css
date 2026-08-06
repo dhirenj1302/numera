@@ -507,3 +507,6 @@
 .reuse-banner{background:#eef6ff;border:1px solid #cfe4fb;border-left:3px solid #2e90fa;border-radius:12px;padding:11px 13px;margin:0 0 12px;font-size:13.5px;line-height:1.5}
 .reuse-banner strong{color:#175cd3}
 .history-actions .btn[href*="reuse-homework"]{}
+
+/* --- Multiple-choice fallback when options are missing (v2.7) --- */
+.mc-fallback-note{font-size:13.5px;color:var(--muted);margin:4px 0 8px}
