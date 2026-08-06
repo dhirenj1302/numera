@@ -510,3 +510,17 @@
 
 /* --- Multiple-choice fallback when options are missing (v2.7) --- */
 .mc-fallback-note{font-size:13.5px;color:var(--muted);margin:4px 0 8px}
+
+/* --- Suggest MC answers (v2.9) --- */
+.suggest-options-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 6px}
+.suggest-hint{font-size:12px}
+.suggest-result:empty{display:none}
+.suggest-result{margin:4px 0 8px}
+.suggest-loading,.suggest-error{font-size:13px;padding:8px 10px;border-radius:8px}
+.suggest-loading{background:#eef2ff;color:#3f4ba8}
+.suggest-error{background:#fef3f2;color:#b42318}
+.suggest-done{background:#f6f8ff;border:1px solid #e0e6fb;border-radius:10px;padding:10px 12px}
+.suggest-correct{font-size:13.5px;margin-bottom:4px}
+.suggest-distractor-label{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:6px 0 2px}
+.suggest-distractors{margin:0;padding-left:18px;font-size:13px}
+.suggest-distractors li{margin:2px 0}

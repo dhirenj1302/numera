@@ -1189,6 +1189,7 @@ function questionEditor(q,i){
       </div>`:""}
 
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
+      ${q.type==="multiple_choice"?`<div class="suggest-options-row"><button type="button" class="btn secondary" onclick="suggestOptions(${i})">✨ Suggest answers</button><span class="suggest-hint muted">Generates the correct answer plus common-mistake distractors</span></div><div class="suggest-result" id="suggestResult${i}"></div>`:""}
       ${(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
         <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
@@ -1243,6 +1244,45 @@ function syncEditors(){
     if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>q.parts[pi][el.dataset.partK]=el.value);});}
   });
 }
+// On-demand: ask the backend to suggest multiple-choice options for question i —
+// the correct answer plus diagnostic distractors (each tied to a common mistake).
+window.suggestOptions = async i => {
+  syncEditors();
+  const q=state.draft.questions[i];
+  const out=document.getElementById(`suggestResult${i}`);
+  const prompt=String(q.prompt||"").trim();
+  if(!prompt){ if(out) out.innerHTML=`<div class="suggest-error">Add the question wording first.</div>`; return; }
+
+  const btn=document.querySelector(`[onclick="suggestOptions(${i})"]`);
+  if(btn){ btn.disabled=true; btn.textContent="Thinking…"; }
+  if(out) out.innerHTML=`<div class="suggest-loading">Generating answer choices…</div>`;
+
+  try{
+    const data=await api("/api/suggest-options",{
+      method:"POST",
+      body:JSON.stringify({prompt, answer:q.answer})
+    });
+    q.options=data.options||[];
+    if(data.correct_answer) q.answer=data.correct_answer;
+    const field=document.querySelector(`[data-i="${i}"] [data-k="options"]`);
+    if(field) field.value=(q.options||[]).join(", ");
+    const answerField=document.querySelector(`[data-i="${i}"] [data-k="answer"]`);
+    if(answerField && data.correct_answer) answerField.value=data.correct_answer;
+
+    const rows=(data.distractors||[]).map(d=>`<li><strong>${esc(String(d.value))}</strong> — <span class="muted">${esc(String(d.misconception||"common mistake"))}</span></li>`).join("");
+    if(out) out.innerHTML=`
+      <div class="suggest-done">
+        <div class="suggest-correct">Correct answer: <strong>${esc(data.correct_answer||q.answer||"")}</strong></div>
+        ${rows?`<div class="suggest-distractor-label">Distractors (each from a common mistake):</div><ul class="suggest-distractors">${rows}</ul>`:""}
+        <p class="small muted">Added to the answer choices above. Edit or remove any before publishing.</p>
+      </div>`;
+  }catch(err){
+    if(out) out.innerHTML=`<div class="suggest-error">${esc(err.message)}</div>`;
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent="✨ Suggest answers"; }
+  }
+};
+
 window.deleteQuestion = i => { syncEditors(); state.draft.questions.splice(i,1); renderReview(); };
 window.addQuestion = () => {
   syncEditors();
