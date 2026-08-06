@@ -2125,6 +2125,21 @@ async function finishHomework(){
   const strengths=Object.entries(topicStats).filter(([,v])=>v.ok/v.total>=.75).map(([k])=>k);
   const needs=Object.entries(topicStats).filter(([,v])=>v.ok/v.total<.75).map(([k])=>k);
 
+  // Understanding insights for the summary (child-first, growth framing).
+  // Derived only from real per-question records — no fabricated signal.
+  const auto=autoMarked; // questions that were auto-marked (exclude teacher-review)
+  const insight={
+    // Right first time with no hint at all — genuine independent success.
+    independent: auto.filter(a=>a.first_correct && !a.hint_used).length,
+    // Wrong (or hint-needed) at first but got there in the end — resilience.
+    turned_around: auto.filter(a=>!a.first_correct && a.mastered).length,
+    // Questions where a hint was used and the child then got it right.
+    hint_helped: auto.filter(a=>a.hint_used && (a.first_correct||a.mastered)).length,
+    // How many questions any hint was opened on, and total hints opened.
+    questions_with_hints: auto.filter(a=>a.hint_used).length,
+    total_hints: auto.reduce((n,a)=>n+(Number(a.hint_count)||0),0)
+  };
+
   // D1 should store answer metadata and drawing coordinates, not a large PNG data URL.
   const safeAttempts=state.attempts.map(a=>{
     const copy={...a};
@@ -2152,7 +2167,7 @@ async function finishHomework(){
       strengths,
       needs_practice:needs
     },
-    summary:{original,mastery,scoreTotal,strengths,needs,teacherReviewCount}
+    summary:{original,mastery,scoreTotal,strengths,needs,teacherReviewCount,insight}
   };
 
   localStorage.setItem("numera:pendingSubmission",JSON.stringify(state.pendingSubmission));
@@ -2180,7 +2195,7 @@ async function savePendingSubmission(){
     localStorage.removeItem("numera:pendingSubmission");
     const s=state.pendingSubmission.summary;
     state.pendingSubmission=null;
-    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id);
+    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id,s.insight);
     if(result.understanding_updated===false){
       console.warn("Result saved, but understanding graph update failed:",result.understanding_error);
     }
@@ -2224,7 +2239,42 @@ window.copySubmissionDebug=async()=>{
   alert("Submission details copied.");
 };
 
-function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId=""){
+function learningStoryMarkup(insight,original,mastery,total){
+  if(!insight) return "";
+  const gained=Math.max(0,mastery-original);
+  const lines=[];
+
+  // Lead with growth: questions figured out during the session after the first try.
+  if(gained>0){
+    lines.push(`💪 You figured out <strong>${gained}</strong> more question${gained===1?"":"s"} after your first go. That's your understanding growing right in front of you.`);
+  }else if(original===total && total>0){
+    lines.push(`🌟 You got every question right first time — brilliant.`);
+  }
+
+  // Resilience: turned-around questions.
+  if(insight.turned_around>0){
+    lines.push(`🔄 On <strong>${insight.turned_around}</strong> question${insight.turned_around===1?"":"s"} you didn't get it at first but kept going and got there. That's exactly how learning works.`);
+  }
+
+  // Hints as evidence — always framed as a smart, positive thing.
+  if(insight.questions_with_hints>0){
+    if(insight.hint_helped>0){
+      lines.push(`💡 You asked for a clue on <strong>${insight.questions_with_hints}</strong> question${insight.questions_with_hints===1?"":"s"} and it paid off — asking for help is a clever thing to do, not a mistake.`);
+    }else{
+      lines.push(`💡 You used clues on <strong>${insight.questions_with_hints}</strong> question${insight.questions_with_hints===1?"":"s"}. Asking for help is a smart move — it's how you work things out.`);
+    }
+  }
+
+  // Independence, kept light and warm.
+  if(insight.independent>0){
+    lines.push(`✅ You solved <strong>${insight.independent}</strong> question${insight.independent===1?"":"s"} all on your own, no clues needed.`);
+  }
+
+  if(!lines.length) return "";
+  return `<div class="card learning-story"><h3>Your learning story</h3>${lines.map(l=>`<p>${l}</p>`).join("")}</div>`;
+}
+
+function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
   app.innerHTML=shell(`
     <div class="mission">
@@ -2236,6 +2286,7 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div class="score"><span>Original score</span><strong>${op}%</strong><span>${original}/${total}</span></div>
       <div class="score mastery"><span>Mastery score</span><strong>${mp}%</strong><span>${mastery}/${total}</span></div>
     </div>
+    ${learningStoryMarkup(insight,original,mastery,total)}
     <div class="parent-summary-label">Parent progress update</div><div class="card parent-summary-card" style="margin-top:10px"><h3>Strengths</h3><p>${strengths.length?strengths.map(x=>`✓ ${esc(x)}`).join("<br>"):"You showed excellent persistence."}</p>
       <h3>Keep practising</h3><p>${needs.length?needs.map(x=>`• ${esc(x)}`).join("<br>"):"No topic stood out as needing further practice."}</p>
       <div class="feedback learn"><strong>Parent suggestion</strong><br>Ask ${esc(state.studentName)} to explain one question aloud. Explaining the method helps make the learning stick.</div>

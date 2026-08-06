@@ -524,3 +524,9 @@
 .suggest-distractor-label{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:6px 0 2px}
 .suggest-distractors{margin:0;padding-left:18px;font-size:13px}
 .suggest-distractors li{margin:2px 0}
+
+/* --- Post-test learning story (v2.11) --- */
+.learning-story{margin-top:14px;border:1px solid #d9d1ff;background:linear-gradient(135deg,#faf9ff,#f3efff)}
+.learning-story h3{margin:0 0 10px;font-size:15px;color:#5b3fd6}
+.learning-story p{margin:8px 0;font-size:14.5px;line-height:1.5}
+.learning-story strong{color:#5b3fd6}
