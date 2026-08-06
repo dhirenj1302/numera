@@ -1220,6 +1220,14 @@ window.addQuestionPart=i=>{syncEditors();const q=state.draft.questions[i];q.type
 window.deleteQuestionPart=(i,pi)=>{syncEditors();const q=state.draft.questions[i];q.parts.splice(pi,1);q.parts.forEach((p,n)=>p.label=String.fromCharCode(97+n));renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
 
 function syncEditors(){
+  // Keep the title/topic inputs in state too. They live outside the question
+  // cards, so without this a re-render (adding a part, deleting a question,
+  // adjusting a crop) would reset the title input back to the old draft value
+  // and silently discard what the teacher typed.
+  const titleEl=document.getElementById("title");
+  if(titleEl) state.draft.title=titleEl.value;
+  const topicEl=document.getElementById("topic");
+  if(topicEl) state.draft.topic=topicEl.value;
   document.querySelectorAll("[data-i]").forEach(card=>{
     const i=+card.dataset.i, q=state.draft.questions[i];
     card.querySelectorAll("[data-k]").forEach(el=>{
@@ -1244,8 +1252,8 @@ window.addQuestion = () => {
 
 window.publishHomework = async () => {
   syncEditors();
-  const title=$("#title").value.trim() || "Year 4 Maths";
-  const topic=$("#topic").value.trim() || "Mixed maths";
+  const title=(state.draft.title||$("#title")?.value||"").trim() || "Year 4 Maths";
+  const topic=(state.draft.topic||$("#topic")?.value||"").trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
   // Multiple-choice needs a usable set of options, and the correct answer must
   // be one of them — otherwise the child sees an empty choice list (the exact
