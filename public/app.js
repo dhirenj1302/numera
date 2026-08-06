@@ -1516,7 +1516,20 @@ function fractionVisualMarkup(q){
 }
 window.setFractionPieces=n=>{state.interactiveAnswers[state.index]=n;renderQuestion();};
 
-function answerWithUnitMarkup(id,unit){return `<div class="answer-with-unit"><input id="${id}" inputmode="decimal" autocomplete="off" placeholder="Type your answer">${unit?`<span class="answer-unit">${esc(unit)}</span>`:""}</div>`;}
+function answerWithUnitMarkup(id,unit){return `<div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('${id}')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="${id}" inputmode="decimal" autocomplete="off" placeholder="Type your answer">${unit?`<span class="answer-unit">${esc(unit)}</span>`:""}</div>`;}
+
+// Toggle a leading minus on a numeric answer. Phone number pads have no minus
+// key, so this button is how a child enters a negative answer (e.g. -1 for
+// (21÷7)−(12÷3)). Only affects the sign; the typed digits are untouched.
+window.toggleAnswerSign=id=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  const v=String(el.value||"").trim();
+  el.value = v.startsWith("-") ? v.slice(1) : (v===""?"-":"-"+v);
+  el.focus();
+  // Keep any oninput-driven state (e.g. MC fallback selection) in sync.
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+};
 function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
 function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;v.push(`${Number(hr)}:${mn.padStart(2,"0")}`);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
 function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>isCorrect(g[i],p.answer));}
@@ -1923,7 +1936,9 @@ function getStudentAnswer(q){
   if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
   if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("");
-  return ($("#answerInput")?.value||"").trim();
+  const typed=($("#answerInput")?.value||"").trim();
+  // A lone "-" or "-." (child tapped ± before typing digits) is not an answer.
+  return /^-\.?$/.test(typed) ? "" : typed;
 }
 function normalise(v){
   const raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
@@ -2028,7 +2043,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      ${/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice") : `<div class="field"><label>Your answer</label><input id="practiceInput" inputmode="decimal"></div>`}
+      ${/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice") : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
