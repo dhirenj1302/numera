@@ -1832,9 +1832,29 @@ window.clearDrawingLines=()=>{drawingState.strokes=[];drawingState.active=null;d
 function drawingAnswer(){
   if(!drawingState.strokes.length) return "";
   const canvas=$("#drawingCanvas");
+  const strokesOnly=canvas?.toDataURL("image/png")||"";
+
+  // The child draws on a transparent canvas laid over the worksheet image, so
+  // the canvas alone is just floating strokes with no context — the AI marker
+  // can't see the eggs, numbers or nests underneath. Composite the worksheet and
+  // the strokes into ONE image so the marker sees exactly what the child sees.
+  let composite=strokesOnly;
+  try{
+    const base=$("#drawingBaseImage");
+    if(base && base.naturalWidth){
+      const c=document.createElement("canvas");
+      c.width=base.naturalWidth; c.height=base.naturalHeight;
+      const ctx=c.getContext("2d");
+      ctx.drawImage(base,0,0,c.width,c.height);
+      if(canvas) ctx.drawImage(canvas,0,0,c.width,c.height);
+      composite=c.toDataURL("image/png");
+    }
+  }catch{ /* fall back to strokes-only if the base image is cross-origin/tainted */ }
+
   return JSON.stringify({
     strokes:drawingState.strokes,
-    preview:canvas?.toDataURL("image/png")||""
+    preview:strokesOnly,      // kept for the teacher review overlay
+    composite                 // worksheet + strokes, for AI marking
   });
 }
 
@@ -1968,7 +1988,7 @@ window.checkAnswer=async()=>{
     const parsed=JSON.parse(given);
     app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Checking the drawing…</h2><p class="muted">Numera is comparing the drawing with the task.</p></div>`,true);
     try{
-      const mark=await api("/api/mark-drawing",{method:"POST",body:JSON.stringify({prompt:q.prompt,rubric:q.drawing_rubric||q.answer||"",source_image:q.visual_data_url||"",drawing_image:parsed.preview})});
+      const mark=await api("/api/mark-drawing",{method:"POST",body:JSON.stringify({prompt:q.prompt,rubric:q.drawing_rubric||q.answer_working||q.answer||"",source_image:q.visual_data_url||"",drawing_image:parsed.composite||parsed.preview})});
       const auto=mark.confidence>=0.72;
       const record={question_index:state.index,first_answer:given,first_correct:auto?mark.correct:false,retries:0,mastered:auto?mark.correct:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:!auto,drawing_preview:parsed.preview,drawing_feedback:mark.feedback,drawing_confidence:mark.confidence};
       state.attempts[state.index]=record;
