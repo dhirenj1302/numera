@@ -24,10 +24,21 @@ export async function onRequestPost(context) {
 
     const body = await context.request.json();
     const instruction =
-      `Mark this child's maths drawing. Task: ${body.prompt}. ` +
-      `Rubric or expected result: ${body.rubric || "Use the task wording"}. ` +
-      `Be conservative. Return JSON with correct boolean, confidence 0-1, and short kind feedback. ` +
-      `If the drawing cannot be judged reliably, confidence must be below 0.72.`;
+      `You are marking a child's answer to a "draw on the picture" maths question.\n` +
+      `Task: ${body.prompt}.\n` +
+      `Expected answer / marking key: ${body.rubric || "Use the task wording."}\n` +
+      (body.source_image
+        ? `You are given TWO images: first the ORIGINAL worksheet, then the child's answer (the worksheet WITH the child's drawing on top). Compare them: work out the correct answer from the original, then judge whether the child's lines/marks match it.\n`
+        : `You are given the child's drawing.\n`) +
+      `Be conservative. Counting hand-drawn objects (eggs, beads, dots) and judging wobbly child-drawn lines is error-prone: if you are not sure, set a LOW confidence so a teacher reviews it. ` +
+      `Return JSON with correct (boolean), confidence (0-1), and short kind feedback. If you cannot reliably tell, confidence MUST be below 0.72.`;
+
+    const content = [{ type: "input_text", text: instruction }];
+    // Original worksheet first (if supplied), then the child's drawing.
+    if (body.source_image) {
+      content.push({ type: "input_image", image_url: body.source_image, detail: "high" });
+    }
+    content.push({ type: "input_image", image_url: body.drawing_image, detail: "high" });
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -37,15 +48,7 @@ export async function onRequestPost(context) {
       },
       body: JSON.stringify({
         model: context.env.OPENAI_MODEL || "gpt-4.1-mini",
-        input: [
-          {
-            role: "user",
-            content: [
-              { type: "input_text", text: instruction },
-              { type: "input_image", image_url: body.drawing_image, detail: "high" }
-            ]
-          }
-        ],
+        input: [{ role: "user", content }],
         text: {
           format: {
             type: "json_schema",
