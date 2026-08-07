@@ -1162,11 +1162,13 @@ function questionEditor(q,i){
       ${q.multipart_incomplete?`<div class="notice multipart-warning"><strong>Check all parts:</strong> Numera detected more than one printed part but could not confidently read every separate answer. Complete or correct the part fields below before publishing.</div>`:""}
       <div class="question-image-actions">
         <button type="button" class="btn secondary" onclick="openCropEditor(${i})">✂️ ${q.visual_data_url?"Adjust image":"Choose image area"}</button>
+        <button type="button" class="btn secondary" onclick="document.getElementById('imgUpload${i}').click()">🖼️ Upload image</button>
+        <input type="file" id="imgUpload${i}" accept="image/*" style="display:none" onchange="uploadQuestionImage(${i}, this)">
         ${q.visual_data_url?`<button type="button" class="btn ghost" onclick="removeQuestionImageDirect(${i})">Remove image</button>`:""}
       </div>
-      <div class="field"><label>Question</label><textarea data-k="prompt" rows="3">${esc(q.prompt)}</textarea></div>
+      <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
@@ -1217,6 +1219,30 @@ window.removeQuestionImageDirect = i => {
   setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
 };
 
+// Let the teacher attach an image by uploading a file (camera or gallery on a
+// phone). This is the way to add an image to a MANUALLY added question, which
+// has no source worksheet page to crop from. The image is stored as a data URL,
+// the same format used everywhere else in the app.
+window.uploadQuestionImage = (i, input) => {
+  const file=input?.files?.[0];
+  if(!file) return;
+  if(!file.type.startsWith("image/")){ alert("Please choose an image file."); input.value=""; return; }
+  if(file.size>8*1024*1024){ alert("That image is quite large (over 8MB). Please choose a smaller photo."); input.value=""; return; }
+  syncEditors();
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const q=state.draft.questions[i];
+    q.visual_data_url=String(reader.result||"");
+    q.needs_visual=true;
+    q.visual_user_adjusted=true;
+    q.source_label=q.source_label||"Uploaded image";
+    renderReview();
+    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+  };
+  reader.onerror=()=>alert("Sorry, that image could not be read. Please try another.");
+  reader.readAsDataURL(file);
+};
+
 window.addQuestionPart=i=>{syncEditors();const q=state.draft.questions[i];q.type="multipart";q.parts||=[];const n=q.parts.length;q.parts.push({label:String.fromCharCode(97+n),prompt:"",answer:"",answer_unit:"",type:"number"});renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
 window.deleteQuestionPart=(i,pi)=>{syncEditors();const q=state.draft.questions[i];q.parts.splice(pi,1);q.parts.forEach((p,n)=>p.label=String.fromCharCode(97+n));renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
 
@@ -1242,6 +1268,16 @@ function syncEditors(){
     const editedHints=[...card.querySelectorAll("[data-hint-i]")].sort((a,b)=>Number(a.dataset.hintI)-Number(b.dataset.hintI)).map(el=>el.value.trim());
     if(editedHints.length){q.hints=editedHints;q.hint=editedHints[0]||"";}
     if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>q.parts[pi][el.dataset.partK]=el.value);});}
+
+    // Auto-detect a "draw" question: if the wording asks the child to draw and
+    // the teacher hasn't deliberately chosen a type, default to the drawing
+    // type. Always overridable — once the teacher picks a type from the dropdown
+    // themselves (type_user_set), we never override it again.
+    const typeEl=card.querySelector('[data-k="type"]');
+    if(typeEl && typeEl.dataset.userChanged==="1") q.type_user_set=true;
+    if(!q.type_user_set && /\bdraw\b/i.test(String(q.prompt||"")) && q.type==="number"){
+      q.type="drawing";
+    }
   });
 }
 // On-demand: ask the backend to suggest multiple-choice options for question i —
@@ -1280,6 +1316,19 @@ window.suggestOptions = async i => {
     if(out) out.innerHTML=`<div class="suggest-error">${esc(err.message)}</div>`;
   }finally{
     if(btn){ btn.disabled=false; btn.textContent="✨ Suggest answers"; }
+  }
+};
+
+// Called when the teacher finishes editing a question's wording. syncEditors()
+// runs the "draw" auto-detect; if it changed the type, re-render so the type
+// dropdown and drawing-specific fields update to match.
+window.maybeAutoDrawing = i => {
+  const before=state.draft.questions[i]?.type;
+  syncEditors();
+  const after=state.draft.questions[i]?.type;
+  if(before!==after){
+    renderReview();
+    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
   }
 };
 
