@@ -1168,11 +1168,12 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
-      ${q.type==="multipart"?`<div class="multipart-editor"><div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option></select></div></div>`).join("")}</div>`:""}
+      ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
+      ${q.type==="multipart"?`<div class="multipart-editor"><div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
 
       ${q.type==="coordinate"?`<div class="interaction-editor"><strong>Coordinate-answer setup</strong><div class="field"><label>Correct coordinate</label><input data-k="coordinate_answer" value="${esc(Array.isArray(q.coordinate_answer)?JSON.stringify(q.coordinate_answer):String(q.coordinate_answer||q.answer||"[0,0]"))}" placeholder="[3, 2]"></div><p class="small muted">Students will see separate x and y boxes.</p></div>`:""}
       ${q.type==="point"?`<div class="interaction-editor">
@@ -1579,9 +1580,38 @@ window.toggleAnswerSign=id=>{
   // Keep any oninput-driven state (e.g. MC fallback selection) in sync.
   el.dispatchEvent(new Event("input",{bubbles:true}));
 };
-function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
-function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;v.push(`${Number(hr)}:${mn.padStart(2,"0")}`);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
-function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>isCorrect(g[i],p.answer));}
+function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:p.type==="sequence"?sequenceMarkup(`partSeq${i}`,p):answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
+
+// Sequence input: one small number box per expected value, so a child can enter
+// a list like 20, 22, 24 on a plain numeric keypad — no comma needed (phone
+// number pads have no comma key). The box count comes from the answer, or from
+// an explicit sequence_count the teacher set.
+function sequenceCount(item){
+  if(Number(item?.sequence_count)>0) return Number(item.sequence_count);
+  const parts=String(item?.answer??"").split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
+  return Math.max(1,parts.length);
+}
+function sequenceMarkup(idBase,item){
+  const count=sequenceCount(item);
+  const boxes=Array.from({length:count},(_,k)=>
+    `<input id="${idBase}_${k}" class="sequence-box" inputmode="decimal" autocomplete="off" aria-label="Number ${k+1} of ${count}">`
+  ).join('<span class="sequence-sep">,</span>');
+  return `<div class="sequence-answer"><div class="sequence-hint">Fill each box in order.</div><div class="sequence-boxes">${boxes}</div>${item.answer_unit?`<span class="answer-unit">${esc(item.answer_unit)}</span>`:""}</div>`;
+}
+// Collect the boxes into a normalised comma string ("20,22,24"). Returns null if
+// any box is empty so the child is prompted to complete it. Order is preserved,
+// which matters for number sequences.
+function readSequenceAnswer(idBase,count){
+  const vals=[];
+  for(let k=0;k<count;k++){
+    const v=($(`#${idBase}_${k}`)?.value||"").trim();
+    if(v==="") return null;
+    vals.push(v);
+  }
+  return vals.join(",");
+}
+function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;v.push(`${Number(hr)}:${mn.padStart(2,"0")}`);}else if(p.type==="sequence"){const s=readSequenceAnswer(`partSeq${i}`,sequenceCount(p));if(s===null)return null;v.push(s);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
+function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>p.type==="sequence"?sequenceIsCorrect(g[i],p.answer):isCorrect(g[i],p.answer));}
 
 
 function parseNumberList(value,fallback=[]){
@@ -1956,6 +1986,8 @@ function renderQuestion(){
                   ? dragMarkup(q)
                   : q.type==="angle"
                     ? angleMarkup(q)
+                    : q.type==="sequence"
+                      ? sequenceMarkup("seqInput",q)
                     : q.type==="multipart"
         ? multipartMarkup(q)
         : isTimeQuestion(q)
@@ -2003,6 +2035,7 @@ function getStudentAnswer(q){
   if(q.type==="clock") return clockAnswer();
   if(q.type==="drag") return dragAnswer(q);
   if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
+  if(q.type==="sequence") return readSequenceAnswer("seqInput",sequenceCount(q));
   if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("");
   const typed=($("#answerInput")?.value||"").trim();
@@ -2015,6 +2048,18 @@ function normalise(v){
   return time ? `${Number(time[1])}:${String(Number(time[2])).padStart(2,"0")}` : raw;
 }
 function isCorrect(given,answer){return normalise(given)===normalise(answer);}
+// Compare two sequences element by element, in order. Each element is compared
+// numerically where possible (so "20" == "20.0" == " 20 "), otherwise as text.
+// This is correct for number sequences where "20,2,24" must NOT equal "20,22,4".
+function sequenceIsCorrect(given,answer){
+  const g=String(given??"").split(",").map(s=>s.trim()).filter(s=>s!=="");
+  const a=String(answer??"").split(/[,\s]+/).map(s=>s.trim()).filter(s=>s!=="");
+  if(g.length!==a.length || a.length===0) return false;
+  return g.every((val,i)=>{
+    const gn=Number(val), an=Number(a[i]);
+    return (Number.isFinite(gn)&&Number.isFinite(an)) ? gn===an : normalise(val)===normalise(a[i]);
+  });
+}
 function interactiveIsCorrect(q,given){
   if(q.type==="point"){
     const actual=parseNumberList(given,[]);
@@ -2027,6 +2072,7 @@ function interactiveIsCorrect(q,given){
   if(q.type==="drag") return Number(given)===Number(q.answer);
   if(q.type==="angle") return Math.abs(Number(given)-Number(q.answer))<=Number(q.angle_tolerance||2);
   if(q.type==="fraction_visual") return normalise(given)===normalise(q.answer);
+  if(q.type==="sequence") return sequenceIsCorrect(given,q.answer);
   return isCorrect(given,q.answer);
 }
 window.checkAnswer=async()=>{
