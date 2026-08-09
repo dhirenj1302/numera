@@ -513,6 +513,22 @@ function studentReportMarkup(data){
   }
   if(r.recovered_after_retry>0){bits.push(`On <strong>${r.recovered_after_retry}</strong> occasion${r.recovered_after_retry===1?"":"s"}, ${name} got a question wrong first but reached mastery after retrying — resilience worth praising.`);}
 
+  // Brief, SPECIFIC "where the mistakes are" callout — one or two areas, as
+  // specific as the real data honestly supports. If misconception tagging is
+  // populated, name the actual misconception; otherwise name the weakest topic(s)
+  // with their scores. Never a vague or invented diagnosis.
+  let focusLine="";
+  if(r.has_misconception_tagging && r.observed_misconceptions.length){
+    const top=r.observed_misconceptions.slice(0,2).map(m=>`${esc(m.misconception_tag)}${m.concept_key?` (in ${esc(m.concept_key)})`:""}`).join(" and ");
+    focusLine=`<div class="report-focus"><span class="report-focus-tag">Where mistakes cluster</span> ${name}'s errors most often show up as <strong>${top}</strong>. That's the most useful thing to work on next.</div>`;
+  }else if(r.weakest_topics && r.weakest_topics.length){
+    const w=r.weakest_topics.filter(t=>t.avg_mastery<75).slice(0,2);
+    if(w.length){
+      const named=w.map(t=>`<strong>${esc(t.topic)}</strong> (${t.avg_mastery}%)`).join(" and ");
+      focusLine=`<div class="report-focus"><span class="report-focus-tag">Where to focus</span> ${name}'s lowest area${w.length>1?"s are":" is"} ${named}. Short, targeted practice here would help most.</div>`;
+    }
+  }
+
   const strong=r.strongest_topics&&r.strongest_topics.length?`<div class="report-row good"><span class="report-k">Strongest so far</span><span>${r.strongest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
   const weak=r.weakest_topics&&r.weakest_topics.length?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
 
@@ -539,6 +555,7 @@ function studentReportMarkup(data){
       <div class="report-head"><h2>Performance report</h2><span class="report-updated">to date</span></div>
       <div class="report-body">
         <p class="report-narrative">${bits.join(" ")}</p>
+        ${focusLine}
         ${strong}${weak}
         ${observedBlock}
         ${typicalBlock}
@@ -1499,6 +1516,7 @@ window.joinHomework=async()=>{
     const student=await api("/api/students",{method:"POST",body:JSON.stringify({username,display_name:name,pin,homework_id:state.homework.id})});
     state.studentName=student.display_name;
     state.studentUsername=student.username;
+    state.studentToken=student.token||"";
     localStorage.setItem("numera:studentUsername",student.username);
     state.index=0; state.attempts=[]; renderMission();
   }catch(e){alert(e.message);}
@@ -2224,6 +2242,15 @@ async function finishHomework(){
     if(!state.attempts[i]) state.attempts[i]={question_index:i,first_answer:null,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[]};
   }
 
+  // A Level Up is a synthetic homework with no DB row, so it must not be saved as
+  // a normal submission (that would hit a foreign key and double-count evidence).
+  // Celebrate the result directly instead. (Persisting Level Up evidence to the
+  // understanding model is a deliberate future step, handled separately.)
+  if(state.homework.is_level_up){
+    const mastered=state.attempts.filter(a=>a.mastered||a.first_correct).length;
+    return renderLevelUpComplete(mastered,total);
+  }
+
   const autoMarked=state.attempts.filter(a=>!a.requires_teacher_review);
   const scoreTotal=Math.max(1,autoMarked.length);
   const original=autoMarked.filter(a=>a.first_correct).length;
@@ -2402,6 +2429,7 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div class="score mastery"><span>Mastery score</span><strong>${mp}%</strong><span>${mastery}/${total}</span></div>
     </div>
     ${learningStoryMarkup(insight,original,mastery,total)}
+    <div id="levelUpOffer"></div>
     <div class="parent-summary-label">Parent progress update</div><div class="card parent-summary-card" style="margin-top:10px"><h3>Strengths</h3><p>${strengths.length?strengths.map(x=>`✓ ${esc(x)}`).join("<br>"):"You showed excellent persistence."}</p>
       <h3>Keep practising</h3><p>${needs.length?needs.map(x=>`• ${esc(x)}`).join("<br>"):"No topic stood out as needing further practice."}</p>
       <div class="feedback learn"><strong>Parent suggestion</strong><br>Ask ${esc(state.studentName)} to explain one question aloud. Explaining the method helps make the learning stick.</div>
@@ -2412,6 +2440,71 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
     </div>
   `);
   if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
+  checkLevelUpOffer();
+}
+
+// Check whether the student has enough weak material to unlock a Level Up, and
+// if so show an inviting card. Silent if not available (never nags the child).
+async function checkLevelUpOffer(){
+  const box=document.getElementById("levelUpOffer");
+  if(!box || !state.studentUsername || !state.studentToken) return;
+  try{
+    const data=await api(`/api/level-up?student_username=${encodeURIComponent(state.studentUsername)}&student_token=${encodeURIComponent(state.studentToken)}&t=${Date.now()}`);
+    if(!data.available) return; // stay silent
+    box.innerHTML=`
+      <div class="card level-up-card">
+        <div class="level-up-badge">⚡ LEVEL UP</div>
+        <h3>Ready for a challenge, ${esc(state.studentName)}?</h3>
+        <p>We've picked ${data.questions.length} questions from things you found tricky before. Beat them to level up your understanding!</p>
+        <button class="btn green block" onclick="startLevelUp()">⚡ Start Level Up</button>
+      </div>`;
+  }catch{ /* silent — Level Up is a bonus, never blocks the summary */ }
+}
+
+// Load the Level Up challenge into the normal player. A Level Up is just a
+// synthetic homework, so the existing mission/question flow runs it unchanged.
+window.startLevelUp=async()=>{
+  if(!state.studentUsername || !state.studentToken) return;
+  app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Building your Level Up…</h2></div>`);
+  try{
+    const data=await api(`/api/level-up?student_username=${encodeURIComponent(state.studentUsername)}&student_token=${encodeURIComponent(state.studentToken)}&t=${Date.now()}`);
+    if(!data.available || !data.questions?.length){
+      alert(data.message||"No Level Up available yet.");
+      return renderComplete(0,0,1);
+    }
+    // Synthetic homework — reuse the whole player.
+    state.homework=normaliseHomeworkQuestions({
+      id:`levelup-${Date.now()}`,
+      title:data.title||"Level Up Challenge",
+      topic:"Level Up",
+      year_group:"",
+      questions_json:JSON.stringify(data.questions),
+      settings_json:"{}",
+      is_level_up:true
+    });
+    state.homework.is_level_up=true;
+    state.index=0; state.attempts=[];
+    renderMission();
+  }catch(e){ alert(e.message); }
+};
+
+function renderLevelUpComplete(mastered,total){
+  const pct=Math.round(mastered/Math.max(1,total)*100);
+  const great=pct>=70;
+  app.innerHTML=shell(`
+    <div class="mission">
+      <div class="confetti">⚡ 🎉 ⚡</div>
+      <h1>Level Up complete, ${esc(state.studentName)}!</h1>
+      <p>${great?"Brilliant — you turned tricky questions into ones you can do.":"Good effort — every one of these was something you found hard before, and you took it on."}</p>
+    </div>
+    <div class="score-grid">
+      <div class="score mastery"><span>You got</span><strong>${mastered}/${total}</strong><span>of your tricky questions</span></div>
+    </div>
+    <div class="card level-up-card">
+      <p>These were all questions you found hard in earlier homework. Coming back to them is exactly how understanding grows. 💪</p>
+    </div>
+  `,true);
+  if(state.voiceEnabled) setTimeout(()=>speak(`Level up complete, ${state.studentName}. Great effort revisiting the tricky questions.`),150);
 }
 
 window.shareTeacherResults = async () => {

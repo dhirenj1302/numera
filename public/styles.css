@@ -538,3 +538,10 @@
 .sequence-box{width:64px;text-align:center;font-size:18px;font-weight:700;padding:12px 6px;border:1px solid #d0d5dd;border-radius:12px}
 .sequence-sep{font-weight:800;color:var(--muted)}
 .sequence-note{font-size:12.5px;margin-top:8px}
+
+/* --- Level Up + report focus (v2.15) --- */
+.level-up-card{border:2px solid #f79009;background:linear-gradient(135deg,#fff8ef,#fff1de);text-align:center}
+.level-up-badge{display:inline-block;background:#f79009;color:#fff;font-weight:900;font-size:12px;letter-spacing:1px;padding:4px 12px;border-radius:20px;margin-bottom:6px}
+.level-up-card h3{margin:6px 0;color:#b54708}
+.report-focus{background:#fff4e5;border-left:3px solid #f79009;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px;line-height:1.5}
+.report-focus-tag{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#b54708;font-weight:700;margin-bottom:3px}
