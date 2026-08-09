@@ -1296,6 +1296,14 @@ function syncEditors(){
     if(!q.type_user_set && /\bdraw\b/i.test(String(q.prompt||"")) && q.type==="number"){
       q.type="drawing";
     }
+    // Auto-detect a number-sequence question: wording that asks for several
+    // numbers in a series/pattern, OR an answer that is a comma-list of numbers.
+    // Same override rules as "draw" — never fights a type the teacher chose.
+    else if(!q.type_user_set && q.type==="number"){
+      const seqWording=/\b(next\s+numbers?|missing\s+numbers?|continue\s+the\s+(pattern|sequence)|number\s+(sequence|pattern|snake)|count(ing)?\s+(in|up|back|on)\b|fill\s+in\s+the\s+(sequence|pattern|numbers))\b/i.test(String(q.prompt||""));
+      const answerIsList=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.answer||""));
+      if(seqWording || answerIsList){ q.type="sequence"; }
+    }
   });
 }
 // On-demand: ask the backend to suggest multiple-choice options for question i —
@@ -2222,7 +2230,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
+      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : /^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.practice_answer||"")) ? `<div class="field"><label>Your answer</label>${sequenceMarkup("practiceSeq",{answer:q.practice_answer})}</div>` : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
@@ -2236,13 +2244,17 @@ window.retryOriginal=()=>renderQuestion();
 window.checkPractice=()=>{
   const q=state.homework.questions[state.index];
   const timePractice=/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim());
+  const seqPractice=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.practice_answer||""));
   const practiceWantsMeridiem=timeNeedsMeridiem({answer:q.practice_answer});
-  const v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem) : ($("#practiceInput")?.value||"").trim();
-  if(v===null) return alert(practiceWantsMeridiem?"Enter the hour, minutes, and choose AM or PM.":"Enter a valid hour and minutes.");
+  const v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem)
+        : seqPractice ? readSequenceAnswer("practiceSeq",sequenceCount({answer:q.practice_answer}))
+        : ($("#practiceInput")?.value||"").trim();
+  if(v===null) return alert(timePractice?(practiceWantsMeridiem?"Enter the hour, minutes, and choose AM or PM.":"Enter a valid hour and minutes."):"Fill in every box.");
   if(!v) return alert("Enter an answer.");
   const record=state.attempts[state.index];
   record.practice_attempts=(record.practice_attempts||0)+1;
-  if(isCorrect(v,q.practice_answer)){
+  const practiceCorrect = seqPractice ? sequenceIsCorrect(v,q.practice_answer) : isCorrect(v,q.practice_answer);
+  if(practiceCorrect){
     record.mastered=true;
     renderCorrect(false,true);
   } else if(record.practice_attempts===1){
@@ -2519,16 +2531,23 @@ window.startLevelUp=async()=>{
       alert(data.message||"No Level Up available yet.");
       return renderComplete(0,0,1);
     }
-    // Synthetic homework — reuse the whole player.
+    // Synthetic homework — reuse the whole player. Pass questions as an ARRAY
+    // directly (the frontend never parses questions_json; the backend normally
+    // returns questions already parsed). Passing questions_json here left
+    // homework.questions undefined and crashed the player on .length.
     state.homework=normaliseHomeworkQuestions({
       id:`levelup-${Date.now()}`,
       title:data.title||"Level Up Challenge",
       topic:"Level Up",
       year_group:"",
-      questions_json:JSON.stringify(data.questions),
-      settings_json:"{}",
+      questions:Array.isArray(data.questions)?data.questions:[],
+      settings:{},
       is_level_up:true
     });
+    if(!state.homework.questions.length){
+      alert("No Level Up available yet.");
+      return renderComplete(0,0,1);
+    }
     state.homework.is_level_up=true;
     state.index=0; state.attempts=[];
     renderMission();
