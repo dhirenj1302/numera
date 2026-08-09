@@ -2109,13 +2109,24 @@ function getStudentAnswer(q){
   return /^-\.?$/.test(typed) ? "" : typed;
 }
 function normalise(v){
-  const raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
+  let raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
   // Time with optional am/pm: canonicalise to "h:mm" or "h:mmam"/"h:mmpm".
   const tm=raw.match(/^(\d{1,2}):(\d{1,2})(a\.?m\.?|p\.?m\.?)?$/);
   if(tm){
     const base=`${Number(tm[1])}:${String(Number(tm[2])).padStart(2,"0")}`;
     if(tm[3]){ return base + (tm[3][0]==="p" ? "pm" : "am"); }
     return base;
+  }
+  // Money: a phone keypad can't type £/$ or a trailing "p"/"pence", so a child
+  // types the plain number. Strip a leading currency symbol and a trailing pence
+  // marker when the rest is numeric, and drop a trailing ".00", so "£2.37",
+  // "2.37", "108p" and "108" compare on their numeric value. This lets a child's
+  // digit-only answer match a stored answer that carries the symbol.
+  const money=raw.match(/^[£$]?(\d+(?:\.\d+)?)(p|pence)?$/);
+  if(money){
+    let n=money[1];
+    if(n.includes(".")) n=n.replace(/0+$/,"").replace(/\.$/,""); // 2.50 -> 2.5, 2.00 -> 2
+    return n;
   }
   return raw;
 }
