@@ -1544,21 +1544,54 @@ window.beginQuiz=()=>{state.phase="answer";state.selected=null;renderQuestion();
 function isTimeQuestion(q){
   return q?.type==="time" || /^\d{1,2}:\d{2}$/.test(String(q?.answer||"").trim());
 }
-function timeAnswerMarkup(prefix=""){
+// Does this time answer specify AM or PM? If so the child needs a toggle, since
+// a number pad can't type "AM"/"PM". We only show the toggle for these questions
+// so ordinary 24-hour / no-meridiem time questions stay uncluttered.
+function timeNeedsMeridiem(item){
+  return /\b([ap])\.?m\.?\b/i.test(String(item?.answer||"")) || item?.time_meridiem===true;
+}
+function answerMeridiem(item){
+  const m=String(item?.answer||"").match(/\b([ap])\.?m\.?\b/i);
+  return m ? (m[1].toLowerCase()==="p" ? "PM" : "AM") : "";
+}
+function timeAnswerMarkup(prefix="", item=null){
+  const wantMeridiem = item && timeNeedsMeridiem(item);
+  const toggle = wantMeridiem ? `
+    <div class="meridiem-toggle" role="group" aria-label="Choose AM or PM">
+      <button type="button" id="${prefix}amBtn" class="meridiem-btn" aria-pressed="false" onclick="setMeridiem('${prefix}','AM')">AM</button>
+      <button type="button" id="${prefix}pmBtn" class="meridiem-btn" aria-pressed="false" onclick="setMeridiem('${prefix}','PM')">PM</button>
+    </div>` : "";
   return `<div class="time-answer" role="group" aria-label="Enter the time">
     <div class="field"><label for="${prefix}hourInput">Hour</label><input id="${prefix}hourInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="3" autocomplete="off"></div>
     <span class="time-colon" aria-hidden="true">:</span>
     <div class="field"><label for="${prefix}minuteInput">Minutes</label><input id="${prefix}minuteInput" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="07" autocomplete="off"></div>
+    ${toggle}
   </div>`;
 }
-function readTimeAnswer(prefix=""){
+// Track the chosen meridiem per input group without needing a re-render.
+window.setMeridiem=(prefix,val)=>{
+  const am=document.getElementById(prefix+"amBtn"), pm=document.getElementById(prefix+"pmBtn");
+  if(!am||!pm) return;
+  const isAm=val==="AM";
+  am.classList.toggle("selected",isAm); pm.classList.toggle("selected",!isAm);
+  am.setAttribute("aria-pressed",String(isAm)); pm.setAttribute("aria-pressed",String(!isAm));
+  am.dataset.chosen=isAm?"1":""; pm.dataset.chosen=!isAm?"1":"";
+};
+function readTimeAnswer(prefix="", wantMeridiem=false){
   const hour=$("#"+prefix+"hourInput")?.value.trim()||"";
   const minute=$("#"+prefix+"minuteInput")?.value.trim()||"";
   if(!hour && !minute) return "";
   if(!/^\d{1,2}$/.test(hour) || !/^\d{1,2}$/.test(minute)) return null;
   const h=Number(hour), m=Number(minute);
   if(h>23 || m>59) return null;
-  return `${h}:${String(m).padStart(2,"0")}`;
+  const base=`${h}:${String(m).padStart(2,"0")}`;
+  if(wantMeridiem){
+    const am=document.getElementById(prefix+"amBtn"), pm=document.getElementById(prefix+"pmBtn");
+    const chosen = am?.dataset.chosen ? "AM" : (pm?.dataset.chosen ? "PM" : "");
+    if(!chosen) return null; // must pick AM or PM before submitting
+    return `${base} ${chosen}`;
+  }
+  return base;
 }
 
 
@@ -1598,7 +1631,7 @@ window.toggleAnswerSign=id=>{
   // Keep any oninput-driven state (e.g. MC fallback selection) in sync.
   el.dispatchEvent(new Event("input",{bubbles:true}));
 };
-function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:p.type==="sequence"?sequenceMarkup(`partSeq${i}`,p):answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
+function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${timeNeedsMeridiem(p)?`<div class="meridiem-toggle" role="group" aria-label="Choose AM or PM"><button type="button" id="partAm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'AM')">AM</button><button type="button" id="partPm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'PM')">PM</button></div>`:""}${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:p.type==="sequence"?sequenceMarkup(`partSeq${i}`,p):answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
 
 // Sequence input: one small number box per expected value, so a child can enter
 // a list like 20, 22, 24 on a plain numeric keypad — no comma needed (phone
@@ -1628,7 +1661,14 @@ function readSequenceAnswer(idBase,count){
   }
   return vals.join(",");
 }
-function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;v.push(`${Number(hr)}:${mn.padStart(2,"0")}`);}else if(p.type==="sequence"){const s=readSequenceAnswer(`partSeq${i}`,sequenceCount(p));if(s===null)return null;v.push(s);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
+window.setMeridiemPart=(i,val)=>{
+  const am=document.getElementById("partAm"+i), pm=document.getElementById("partPm"+i);
+  if(!am||!pm) return;
+  const isAm=val==="AM";
+  am.classList.toggle("selected",isAm); pm.classList.toggle("selected",!isAm);
+  am.dataset.chosen=isAm?"1":""; pm.dataset.chosen=!isAm?"1":"";
+};
+function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;let t=`${Number(hr)}:${mn.padStart(2,"0")}`;if(timeNeedsMeridiem(p)){const am=document.getElementById("partAm"+i),pm=document.getElementById("partPm"+i);const chosen=am?.dataset.chosen?"AM":(pm?.dataset.chosen?"PM":"");if(!chosen)return null;t=`${t} ${chosen}`;}v.push(t);}else if(p.type==="sequence"){const s=readSequenceAnswer(`partSeq${i}`,sequenceCount(p));if(s===null)return null;v.push(s);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
 function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>p.type==="sequence"?sequenceIsCorrect(g[i],p.answer):isCorrect(g[i],p.answer));}
 
 
@@ -2009,7 +2049,7 @@ function renderQuestion(){
                     : q.type==="multipart"
         ? multipartMarkup(q)
         : isTimeQuestion(q)
-          ? timeAnswerMarkup("")
+          ? timeAnswerMarkup("",q)
           : answerWithUnitMarkup("answerInput",q.answer_unit||"");
   app.innerHTML=shell(`
     <div class="row between"><strong>Question ${state.index+1} of ${n}</strong><span class="pill">${esc(q.topic||state.homework.topic)}</span></div>
@@ -2055,15 +2095,21 @@ function getStudentAnswer(q){
   if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
   if(q.type==="sequence") return readSequenceAnswer("seqInput",sequenceCount(q));
   if(q.type==="multipart") return readMultipartAnswer(q);
-  if(isTimeQuestion(q)) return readTimeAnswer("");
+  if(isTimeQuestion(q)) return readTimeAnswer("", timeNeedsMeridiem(q));
   const typed=($("#answerInput")?.value||"").trim();
   // A lone "-" or "-." (child tapped ± before typing digits) is not an answer.
   return /^-\.?$/.test(typed) ? "" : typed;
 }
 function normalise(v){
   const raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
-  const time=raw.match(/^(\d{1,2}):(\d{1,2})$/);
-  return time ? `${Number(time[1])}:${String(Number(time[2])).padStart(2,"0")}` : raw;
+  // Time with optional am/pm: canonicalise to "h:mm" or "h:mmam"/"h:mmpm".
+  const tm=raw.match(/^(\d{1,2}):(\d{1,2})(a\.?m\.?|p\.?m\.?)?$/);
+  if(tm){
+    const base=`${Number(tm[1])}:${String(Number(tm[2])).padStart(2,"0")}`;
+    if(tm[3]){ return base + (tm[3][0]==="p" ? "pm" : "am"); }
+    return base;
+  }
+  return raw;
 }
 function isCorrect(given,answer){return normalise(given)===normalise(answer);}
 // Compare two sequences element by element, in order. Each element is compared
@@ -2176,7 +2222,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      ${/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice") : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
+      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
@@ -2189,9 +2235,10 @@ function renderIncorrect(){
 window.retryOriginal=()=>renderQuestion();
 window.checkPractice=()=>{
   const q=state.homework.questions[state.index];
-  const timePractice=/^\d{1,2}:\d{2}$/.test(String(q.practice_answer||"").trim());
-  const v=timePractice ? readTimeAnswer("practice") : ($("#practiceInput")?.value||"").trim();
-  if(v===null) return alert("Enter a valid hour and minutes.");
+  const timePractice=/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim());
+  const practiceWantsMeridiem=timeNeedsMeridiem({answer:q.practice_answer});
+  const v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem) : ($("#practiceInput")?.value||"").trim();
+  if(v===null) return alert(practiceWantsMeridiem?"Enter the hour, minutes, and choose AM or PM.":"Enter a valid hour and minutes.");
   if(!v) return alert("Enter an answer.");
   const record=state.attempts[state.index];
   record.practice_attempts=(record.practice_attempts||0)+1;
