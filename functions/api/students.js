@@ -4,6 +4,8 @@
 
 import { json, clean, hashPin } from "./_lib.js";
 
+const SESSION_WINDOW = "+30 days";
+
 export async function onRequestPost(context) {
   try {
     const body = await context.request.json();
@@ -46,7 +48,15 @@ export async function onRequestPost(context) {
       }
     }
 
-    return json({ username, display_name: student.display_name });
+    // Issue a session token so the child's later actions (e.g. Level Up) can be
+    // authenticated as this student. They're PIN-verified at this point.
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    await context.env.DB
+      .prepare("UPDATE students SET session_token=?,session_expires=datetime('now',?) WHERE username=?")
+      .bind(token, SESSION_WINDOW, username)
+      .run();
+
+    return json({ username, display_name: student.display_name, token });
   } catch (error) {
     return json({ error: error.message }, { status: 500 });
   }
