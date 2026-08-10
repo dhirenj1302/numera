@@ -70,10 +70,25 @@ window.readCurrentQuestion = () => {
 };
 
 const api = async (url, options={}) => {
-  const res = await fetch(url, {
-    headers: {"Content-Type":"application/json", ...(options.headers||{})},
-    ...options
-  });
+  // Client-side timeout so the UI can never hang forever if the backend is killed
+  // mid-request (e.g. the reader Worker exceeding its time budget). Extraction is
+  // slow, so allow generous time, but always resolve to an error eventually.
+  const { timeoutMs = 60000, headers, ...rest } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
+      ...rest,
+      headers: {"Content-Type":"application/json", ...(headers||{})},
+      signal: controller.signal
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e?.name === "AbortError") throw new Error("This took too long and timed out. Please check your connection and try again.");
+    throw e;
+  }
+  clearTimeout(timer);
   const data = await res.json().catch(()=>({}));
   if (!res.ok) throw new Error(data.error || "Something went wrong");
   return data;
@@ -1303,6 +1318,16 @@ function syncEditors(){
       const seqWording=/\b(next\s+numbers?|missing\s+numbers?|continue\s+the\s+(pattern|sequence)|number\s+(sequence|pattern|snake)|count(ing)?\s+(in|up|back|on)\b|fill\s+in\s+the\s+(sequence|pattern|numbers))\b/i.test(String(q.prompt||""));
       const answerIsList=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.answer||""));
       if(seqWording || answerIsList){ q.type="sequence"; }
+      // Word answer: the correct answer contains alphabetic words a child cannot
+      // type on a numeric keypad (e.g. "four thousand six hundred and two",
+      // "hexagon"). Default to multiple choice. A units label like "cm" in
+      // answer_unit doesn't count — only letters IN the answer itself.
+      else if(/[a-z]{3,}/i.test(String(q.answer||"")) && !/^\s*(teacher review)?\s*$/i.test(String(q.answer||""))){
+        q.type="multiple_choice";
+        if(!(q.options||[]).filter(o=>String(o).trim()).length){
+          q.options=[String(q.answer).trim()]; // seed with the correct answer; teacher/AI add distractors
+        }
+      }
     }
   });
 }
@@ -2130,7 +2155,54 @@ function normalise(v){
   }
   return raw;
 }
-function isCorrect(given,answer){return normalise(given)===normalise(answer);}
+function isCorrect(given,answer){
+  // Word-answer leniency: if either side contains alphabetic words, compare with
+  // tolerance for "and", commas, hyphens, spacing and case — and also accept the
+  // numeric equivalent (so a child may answer "4602" for "four thousand six
+  // hundred and two", or vice versa).
+  const g=String(given), a=String(answer);
+  if(/[a-z]/i.test(g) || /[a-z]/i.test(a)){
+    if(looseWords(g)===looseWords(a)) return true;
+    // Cross-check numeric equivalence in both directions.
+    const gNum=wordsToNumber(g), aNum=wordsToNumber(a);
+    if(gNum!=null && aNum!=null && gNum===aNum) return true;
+    if(gNum!=null && /^-?\d+$/.test(a.trim()) && gNum===Number(a.trim())) return true;
+    if(aNum!=null && /^-?\d+$/.test(g.trim()) && aNum===Number(g.trim())) return true;
+    return false;
+  }
+  return normalise(given)===normalise(answer);
+}
+// Normalise a worded answer: lowercase, drop "and", strip punctuation/hyphens,
+// collapse spaces. So "Four thousand, six hundred and two" and
+// "four thousand six hundred two" compare equal.
+function looseWords(s){
+  return String(s).toLowerCase()
+    .replace(/[,\-]/g," ")
+    .replace(/\band\b/g," ")
+    .replace(/[^a-z0-9 ]/g,"")
+    .replace(/\s+/g," ").trim();
+}
+// Convert a spelled-out whole number (up to millions) to a Number, or null if it
+// isn't a clean number phrase. Good enough for primary-school magnitudes.
+function wordsToNumber(s){
+  const clean=looseWords(s);
+  if(!clean || /[a-z]/.test(clean)===false) return null; // no words -> not our job
+  const units={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+  const tens={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+  const scales={hundred:100,thousand:1000,million:1000000};
+  const tokens=clean.split(" ");
+  let total=0, current=0, sawWord=false;
+  for(const t of tokens){
+    if(t in units){ current+=units[t]; sawWord=true; }
+    else if(t in tens){ current+=tens[t]; sawWord=true; }
+    else if(t==="hundred"){ current=(current||1)*100; sawWord=true; }
+    else if(t==="thousand"){ total+=(current||1)*1000; current=0; sawWord=true; }
+    else if(t==="million"){ total+=(current||1)*1000000; current=0; sawWord=true; }
+    else if(/^\d+$/.test(t)){ current+=Number(t); }
+    else { return null; } // unknown word -> not a clean number phrase
+  }
+  return sawWord ? total+current : null;
+}
 // Compare two sequences element by element, in order. Each element is compared
 // numerically where possible (so "20" == "20.0" == " 20 "), otherwise as text.
 // This is correct for number sequences where "20,2,24" must NOT equal "20,22,4".
