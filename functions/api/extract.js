@@ -1,3 +1,55 @@
+// Call the OpenAI Responses API with retry-and-backoff on TRANSIENT failures.
+// A 520 (and 429/500/502/503/504, or a network throw) is usually a temporary
+// infrastructure hiccup between us and OpenAI — often an HTML error page, not
+// JSON — so a hard immediate failure was surfacing "OpenAI returned 520" to
+// teachers for what is frequently a retryable blip. We retry a few times with
+// increasing delay, and only give up (throwing a clearer message) after that.
+const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 522, 524]);
+
+async function openaiResponsesCall(apiKey, payload, { retries = 3 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) return await response.json();
+
+      // Read the body once, tolerate non-JSON (520s often return HTML).
+      const bodyText = await response.text().catch(() => "");
+      let parsed = null;
+      try { parsed = JSON.parse(bodyText); } catch { /* HTML/empty */ }
+
+      if (TRANSIENT_STATUSES.has(response.status) && attempt < retries) {
+        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt))); // 0.6s, 1.2s, 2.4s
+        lastErr = new Error(`OpenAI returned ${response.status}`);
+        continue;
+      }
+      // Non-transient, or out of retries.
+      const msg = parsed?.error?.message
+        || (TRANSIENT_STATUSES.has(response.status)
+              ? `The reader service is busy right now (error ${response.status}). Please try again in a moment.`
+              : `OpenAI returned ${response.status}`);
+      const fatal = new Error(msg);
+      fatal.noRetry = true; // don't let the network-catch below retry a real API error
+      throw fatal;
+    } catch (err) {
+      // A deliberate non-transient API error must not be retried.
+      if (err?.noRetry) throw err;
+      // Network-level throw (fetch rejected) — retry if attempts remain.
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
+        lastErr = err;
+        continue;
+      }
+      throw lastErr || err;
+    }
+  }
+  throw lastErr || new Error("OpenAI request failed.");
+}
+
 const pageSchema = {
   type:"object",
   additionalProperties:false,
@@ -110,12 +162,9 @@ function countPrintedPartMarkers(text=""){
 }
 
 async function repairMultipartQuestion(context,imageUrl,pageIndex,question){
-  const response=await fetch("https://api.openai.com/v1/responses",{
-    method:"POST",
-    headers:{Authorization:`Bearer ${context.env.OPENAI_API_KEY}`,"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
-      input:[{role:"user",content:[
+  const data=await openaiResponsesCall(context.env.OPENAI_API_KEY,{
+    model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
+    input:[{role:"user",content:[
         {type:"input_text",text:`Re-read PAGE ${pageIndex+1}. The previous extraction appears to have merged a multi-part maths question.
 
 Locate the exact printed question corresponding to:
@@ -134,10 +183,7 @@ NON-NEGOTIABLE:
       ]}],
       text:{format:{type:"json_schema",name:"numera_multipart_repair",strict:true,schema:repairedMultipartSchema}},
       max_output_tokens:5000
-    })
-  });
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok) throw new Error(data.error?.message||`OpenAI returned ${response.status}`);
+  },{retries:2});
   const raw=outputText(data);
   if(!raw) throw new Error("No repaired multipart data returned.");
   return JSON.parse(raw);
@@ -210,24 +256,16 @@ Only populate these fields with meaningful values when the selected question typ
 20. If any item is too unclear, omit it and explain briefly in warning.
 11. Set answer_unit to the unit requested by the printed answer line, such as ml, cm, minutes, children or £; use an empty string if unitless. Do not include the unit inside a numeric answer. 12. Return questions in exact top-to-bottom page order. Do not include pupil names.`;
 
-  const response=await fetch("https://api.openai.com/v1/responses",{
-    method:"POST",
-    headers:{Authorization:`Bearer ${context.env.OPENAI_API_KEY}`,"Content-Type":"application/json"},
-    body:JSON.stringify({
-      model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
-      input:[{role:"user",content:[
-        {type:"input_text",text:prompt},
-        {type:"input_image",image_url:imageUrl,detail:"high"}
-      ]}],
-      text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
-      max_output_tokens:10000
-    })
+  const data=await openaiResponsesCall(context.env.OPENAI_API_KEY,{
+    model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
+    input:[{role:"user",content:[
+      {type:"input_text",text:prompt},
+      {type:"input_image",image_url:imageUrl,detail:"high"}
+    ]}],
+    text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
+    max_output_tokens:10000
   });
 
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok){
-    throw new Error(data.error?.message || `OpenAI returned ${response.status}`);
-  }
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
   try{
