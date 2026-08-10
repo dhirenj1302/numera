@@ -5,7 +5,7 @@
 // is capped by AbortController; we retry transient failures at most twice with
 // short backoff. Out-of-credit (429 insufficient_quota) fails fast and clearly.
 const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 522, 524]);
-const PER_CALL_TIMEOUT_MS = 45000; // hard cap per attempt
+const PER_CALL_TIMEOUT_MS = 50000; // hard cap per attempt (must fit under the frontend api() timeout)
 
 async function openaiResponsesCall(apiKey, payload, { retries = 2 } = {}) {
   let lastErr = null;
@@ -195,27 +195,51 @@ NON-NEGOTIABLE:
       ]}],
       text:{format:{type:"json_schema",name:"numera_multipart_repair",strict:true,schema:repairedMultipartSchema}},
       max_output_tokens:5000
-  },{retries:2});
+  },{retries:0});
   const raw=outputText(data);
   if(!raw) throw new Error("No repaired multipart data returned.");
   return JSON.parse(raw);
 }
 
 async function repairMissedMultipart(context,imageUrl,pageIndex,questions){
+  // Each repair is a SEPARATE OpenAI round-trip. On a dense page many questions
+  // can look multi-part (e.g. "98mm = _ cm _ mm"), and running a repair for every
+  // one in sequence blows the request time budget and times the whole upload out.
+  // So we cap how many repairs run and stop once a time budget is used up. A
+  // skipped repair just means that question keeps its first-pass parsing (still
+  // usable, and the teacher can fix it) — far better than failing the whole page.
+  const MAX_REPAIRS = 2;
+  const REPAIR_BUDGET_MS = 15000;
+  const startedAt = Date.now();
+  let repairsDone = 0;
+
   const repaired=[];
   for(const q of questions||[]){
     const markerCount=countPrintedPartMarkers(q.prompt);
     const partsCount=Array.isArray(q.parts)?q.parts.length:0;
 
+    const canRepair = markerCount>=2 && partsCount<markerCount
+      && repairsDone < MAX_REPAIRS
+      && (Date.now()-startedAt) < REPAIR_BUDGET_MS;
+
     if(markerCount>=2 && partsCount<markerCount){
-      try{
-        const fixed=await repairMultipartQuestion(context,imageUrl,pageIndex,q);
-        repaired.push({...fixed,multipart_repaired:true});
-        continue;
-      }catch(error){
-        repaired.push({...q,type:"multipart",multipart_incomplete:true,repair_warning:error.message});
-        continue;
+      if(canRepair){
+        try{
+          const fixed=await repairMultipartQuestion(context,imageUrl,pageIndex,q);
+          repairsDone++;
+          repaired.push({...fixed,multipart_repaired:true});
+          continue;
+        }catch(error){
+          repaired.push({...q,type:"multipart",multipart_incomplete:true,repair_warning:error.message});
+          continue;
+        }
       }
+      // Over budget/cap: keep the question, mark it so the editor flags it for a
+      // quick teacher check, but don't spend another slow OpenAI call.
+      if(partsCount>1) q.type="multipart";
+      else q.multipart_incomplete=true;
+      repaired.push(q);
+      continue;
     }
 
     if(partsCount>1 && q.type!=="multipart"){
@@ -276,8 +300,8 @@ Only populate these fields with meaningful values when the selected question typ
       {type:"input_image",image_url:imageUrl,detail:"high"}
     ]}],
     text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
-    max_output_tokens:10000
-  },{retries:1});
+    max_output_tokens:6000
+  },{retries:0});
 
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
