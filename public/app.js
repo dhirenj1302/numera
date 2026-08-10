@@ -1097,7 +1097,7 @@ async function extractHomework(){
     state.sourceImages=images;
     const status=document.querySelectorAll(".processing-list div");
     status[0]?.classList.remove("active"); status[1]?.classList.add("active");
-    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images})});
+    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images}), timeoutMs:85000});
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
     status[1]?.classList.remove("active"); status[2]?.classList.add("active");
     state.draft=await attachQuestionVisuals(state.draft);
