@@ -1091,7 +1091,7 @@ async function extractHomework(){
     app.innerHTML = shell(`
       <div class="mobile-page-head"><span class="step-chip error-chip">Could not read worksheet</span><h1>Let’s try that photo again</h1></div>
       <div class="card extraction-error"><div class="mascot">📸</div><p>${esc(e.message)}</p><div class="photo-help"><div>• Photograph one full page at a time</div><div>• Move closer so the print is sharp</div><div>• Avoid glare and dark shadows</div><div>• Use JPG, PNG or the phone camera</div></div></div>
-      <button class="btn primary block" onclick="renderUpload()">Retake or choose photos</button>
+      <button class="btn primary block" onclick="location.hash='#/create'">Retake or choose photos</button>
     `, true);
   }
 }
