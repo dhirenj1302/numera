@@ -1,50 +1,62 @@
-// Call the OpenAI Responses API with retry-and-backoff on TRANSIENT failures.
-// A 520 (and 429/500/502/503/504, or a network throw) is usually a temporary
-// infrastructure hiccup between us and OpenAI — often an HTML error page, not
-// JSON — so a hard immediate failure was surfacing "OpenAI returned 520" to
-// teachers for what is frequently a retryable blip. We retry a few times with
-// increasing delay, and only give up (throwing a clearer message) after that.
+// Call the OpenAI Responses API with a per-attempt TIMEOUT and limited retries.
+// Cloudflare Pages Functions have a request time budget, so we must never let a
+// single call hang and never retry so long that the whole request is killed
+// (which returns NOTHING to the browser and leaves the UI stuck). Each attempt
+// is capped by AbortController; we retry transient failures at most twice with
+// short backoff. Out-of-credit (429 insufficient_quota) fails fast and clearly.
 const TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504, 520, 522, 524]);
+const PER_CALL_TIMEOUT_MS = 45000; // hard cap per attempt
 
-async function openaiResponsesCall(apiKey, payload, { retries = 3 } = {}) {
+async function openaiResponsesCall(apiKey, payload, { retries = 2 } = {}) {
   let lastErr = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PER_CALL_TIMEOUT_MS);
     try {
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      clearTimeout(timer);
       if (response.ok) return await response.json();
 
-      // Read the body once, tolerate non-JSON (520s often return HTML).
       const bodyText = await response.text().catch(() => "");
       let parsed = null;
       try { parsed = JSON.parse(bodyText); } catch { /* HTML/empty */ }
 
+      // Out of credit / quota — do NOT retry, surface a clear message.
+      const code = parsed?.error?.code || "";
+      if (response.status === 429 && /quota|insufficient/i.test(code + (parsed?.error?.message || ""))) {
+        const e = new Error("The worksheet reader is out of OpenAI credit. Please top up the OpenAI account and try again.");
+        e.noRetry = true;
+        throw e;
+      }
+
       if (TRANSIENT_STATUSES.has(response.status) && attempt < retries) {
-        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt))); // 0.6s, 1.2s, 2.4s
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // 0.5s, 1.0s
         lastErr = new Error(`OpenAI returned ${response.status}`);
         continue;
       }
-      // Non-transient, or out of retries.
       const msg = parsed?.error?.message
         || (TRANSIENT_STATUSES.has(response.status)
               ? `The reader service is busy right now (error ${response.status}). Please try again in a moment.`
               : `OpenAI returned ${response.status}`);
       const fatal = new Error(msg);
-      fatal.noRetry = true; // don't let the network-catch below retry a real API error
+      fatal.noRetry = true;
       throw fatal;
     } catch (err) {
-      // A deliberate non-transient API error must not be retried.
+      clearTimeout(timer);
       if (err?.noRetry) throw err;
-      // Network-level throw (fetch rejected) — retry if attempts remain.
+      // Timeout (abort) or network throw — retry if attempts remain.
+      const isTimeout = err?.name === "AbortError";
       if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
-        lastErr = err;
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        lastErr = isTimeout ? new Error("The worksheet reader timed out. Please try again.") : err;
         continue;
       }
-      throw lastErr || err;
+      throw lastErr || (isTimeout ? new Error("The worksheet reader timed out. Please try again.") : err);
     }
   }
   throw lastErr || new Error("OpenAI request failed.");
@@ -231,7 +243,8 @@ For every complete visible question:
 4. Add one similar practice question and answer.
 5. Set needs_visual=true when the child must see a grid, shape, diagram, graph, pictogram, number line, table, clock, fraction model or other picture to answer.
 6. When needs_visual=true, give visual_bbox as [x,y,width,height] using coordinates from 0 to 1000 across the page. Include the whole relevant visual and any labels needed to understand it. Add a little surrounding context. If no visual is needed, use [0,0,0,0].
-7. If a printed question contains separately answerable parts such as (a) and (b), use type=multipart and create one parts item for each printed part in order. Each part needs its own prompt, answer, answer_unit and type. Do not merge separate answers. Use type=time whenever the correct answer is a clock time written with a colon, such as 3:07 or 14:35. Store the answer in H:MM or HH:MM format. Use type=drawing where the pupil must draw a line, line of symmetry, matching connection, route, reflection line or other answer directly on the diagram. For drawing questions, set answer to "teacher review", leave practice_prompt and practice_answer empty, and in answer_working record a CONCRETE ANSWER KEY the marker can check against — not a vague description. For a "join/match" drawing question, state every correct pairing and the count that justifies it, e.g. "Nest with 2 eggs -> chicken labelled 2; nest with 5 eggs -> chicken 5; nest with 4 eggs -> chicken 4". For a line-of-symmetry or route question, describe precisely where the correct line goes. Also put drawing_rubric = the same answer key. Read the picture carefully and count objects one by one; if you cannot be sure of the counts, still give your best key but note the uncertainty. Use type=sequence when the pupil must fill in several numbers in a sequence or pattern (e.g. "fill in the number snakes", "write the missing numbers", counting in 2s/5s/10s). Put ALL the missing values in answer as a comma-separated list IN ORDER, e.g. "20,22,24". If only some cells in a run are blank, include only the values the pupil must fill, in order. The pupil will get one number box per value, so they don't need to type commas. Use type=number for other typed answers and multiple_choice only where printed choices exist or are genuinely useful. Whenever you produce a multiple_choice question, options MUST contain the correct answer plus 2-3 DIAGNOSTIC distractors — each distractor being the answer a child would get from a specific common mistake for that exact question (for example, adding the denominators when adding fractions, or an off-by-one place-value slip), never a random wrong number. Preserve the exact notation, units and currency of the question in every option; do not normalise them.
+7. If a printed question contains separately answerable parts such as (a) and (b), use type=multipart and create one parts item for each printed part in order. Each part needs its own prompt, answer, answer_unit and type. Do not merge separate answers. Use type=time whenever the correct answer is a clock time written with a colon, such as 3:07 or 14:35. Store the answer in H:MM or HH:MM format. Use type=drawing where the pupil must draw a line, line of symmetry, matching connection, route, reflection line or other answer directly on the diagram. For drawing questions, set answer to "teacher review", leave practice_prompt and practice_answer empty, and in answer_working record a CONCRETE ANSWER KEY the marker can check against — not a vague description. For a "join/match" drawing question, state every correct pairing and the count that justifies it, e.g. "Nest with 2 eggs -> chicken labelled 2; nest with 5 eggs -> chicken 5; nest with 4 eggs -> chicken 4". For a line-of-symmetry or route question, describe precisely where the correct line goes. Also put drawing_rubric = the same answer key. Read the picture carefully and count objects one by one; if you cannot be sure of the counts, still give your best key but note the uncertainty. Use type=sequence when the pupil must fill in several numbers in a sequence or pattern (e.g. "fill in the number snakes", "write the missing numbers", counting in 2s/5s/10s). Put ALL the missing values in answer as a comma-separated list IN ORDER, e.g. "20,22,24". If only some cells in a run are blank, include only the values the pupil must fill, in order. The pupil will get one number box per value, so they don't need to type commas. Use type=number for other typed answers and multiple_choice only where printed choices exist or are genuinely useful.
+7e. WORD ANSWERS DEFAULT TO MULTIPLE CHOICE. When the correct answer is words rather than a number that a child could type on a numeric keypad — for example "write in words the number shown" (answer "four thousand six hundred and two"), spelling a number, naming a shape ("hexagon"), a day/month, or any answer containing alphabetic words — use type=multiple_choice. A phone number pad cannot type letters, so a plain typed answer is impossible for the child. Provide the correct answer plus 2-3 DIAGNOSTIC distractors that reflect common mistakes for that exact answer (e.g. for "four thousand six hundred and two": "four thousand and sixty-two" (misread place value), "four thousand six hundred and twenty" (units/tens slip), "forty-six thousand and two" (magnitude error)). Keep the answer field as the exact correct words. Whenever you produce a multiple_choice question, options MUST contain the correct answer plus 2-3 DIAGNOSTIC distractors — each distractor being the answer a child would get from a specific common mistake for that exact question (for example, adding the denominators when adding fractions, or an off-by-one place-value slip), never a random wrong number. Preserve the exact notation, units and currency of the question in every option; do not normalise them.
 7d. MONEY ANSWERS. A child answers on a phone number pad and cannot type "£" or "p". For money questions, put ONLY the number in answer (e.g. "2.37" or "108") and put the currency symbol or unit in answer_unit ("£" for pounds, "p" for pence) so it shows beside the box as a label. Keep pounds and pence consistent with how the question is asked (a "how much change in p" answer is pence like "4" with unit "p"; a "£" answer is pounds like "2.37" with unit "£"). Never put the currency symbol inside the answer string.
 7a. CRITICAL — ONE QUESTION PER PRINTED NUMBER. Each printed question number (for example 5, 6, 7, 8, or a range like "1-2" or "3-4") is a SEPARATE question object. Never merge two different numbered items into one prompt. Introductory text or a worked example that is NOT itself numbered (for example "A is at the point (1,2)." or "A is 1 square along and 2 squares up from (0,0).") is shared context: do NOT emit it as its own question, and do NOT prepend the whole intro to every following question. Instead, put only the essential shared context needed to answer inside each question's own prompt. A blank to fill such as "B is ___ squares along and ___ squares up" is one question. If several numbered items share one diagram (a grid, number line or shape), repeat needs_visual=true and the same visual_bbox on EACH of those questions so every one carries its own copy of the shared picture.
 7b. COORDINATE GRID QUESTIONS. When a question asks the pupil to mark, plot or read a point on a coordinate grid, use type=point and populate point_answer with the [x,y] the pupil should mark. Read the printed grid's axis numbers and set grid_bounds to [xmin,xmax,ymin,ymax] exactly matching the printed grid (for example a grid labelled 0 to 5 on both axes is [0,5,0,5], NOT [-5,5,-5,5]). Set grid_step to the spacing between printed gridlines (usually 1). Always set needs_visual=true and give the visual_bbox of the printed grid so the pupil sees the same grid.
@@ -264,7 +277,7 @@ Only populate these fields with meaningful values when the selected question typ
     ]}],
     text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
     max_output_tokens:10000
-  });
+  },{retries:1});
 
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
