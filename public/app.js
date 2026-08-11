@@ -362,7 +362,13 @@ window.loginSetter=async e=>{
   e.preventDefault();
   try{
     const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_setter",username:$("#setterUsername").value.trim().toLowerCase(),pin:$("#setterPin").value})});
-    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/teacher-dashboard";
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));
+    if(state.returnToReviewAfterSignIn && state.draft){
+      state.returnToReviewAfterSignIn=false;
+      renderReview(); // back to the safe reviewed questions, ready to publish again
+    }else{
+      location.hash="#/teacher-dashboard";
+    }
   }catch(err){alert(err.message);}
 };
 window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/teacher-signin";};
@@ -1183,6 +1189,13 @@ function normaliseHomeworkQuestions(homework){
   return homework;
 }
 
+window.renderReview = () => renderReview();
+// After a session-expiry publish failure, send the teacher to sign in, then
+// bring them straight back to their reviewed questions (safe in state.draft).
+window.goSignInThenReview = () => {
+  state.returnToReviewAfterSignIn = true;
+  location.hash = "#/teacher-signin";
+};
 function renderReview(){
   if (!state.draft) return location.hash="#/create";
   state.draft.questions=(state.draft.questions||[]).map(normaliseMultipartQuestion);
@@ -1494,9 +1507,18 @@ window.publishHomework = async () => {
       location.hash="#/published";
     }
   } catch(e){
+    const msg=String(e.message||"");
+    const isSession=/session expired|sign in/i.test(msg);
+    const helpBlock = isSession
+      ? `<div class="photo-help"><div>• Your sign-in has expired — sign in again</div><div>• Your reviewed questions are safe and will still be here</div><div>• Then tap Publish again</div></div>`
+      : `<div class="photo-help"><div>• Check your connection and try again</div><div>• If a question has a large image, try again in a moment</div></div>`;
+    const signInBtn = isSession
+      ? `<button class="btn green block" onclick="goSignInThenReview()">Sign in again</button>`
+      : "";
     app.innerHTML=shell(`
       <section class="mobile-page-head"><span class="step-chip error-chip">${state.editingHomeworkId?"Save failed":"Publish failed"}</span><h1>${state.editingHomeworkId?"The changes were not saved":"The homework was not saved"}</h1><p class="muted">Your reviewed questions are still in this browser.</p></section>
-      <div class="card extraction-error"><div class="mascot">🛠️</div><p><strong>${esc(e.message)}</strong></p><div class="photo-help"><div>• Check the D1 binding is named DB</div><div>• Confirm the homeworks table exists</div><div>• Try publishing fewer image-based questions</div></div></div>
+      <div class="card extraction-error"><div class="mascot">🛠️</div><p><strong>${esc(e.message)}</strong></p>${helpBlock}</div>
+      ${signInBtn}
       <button class="btn primary block" onclick="renderReview()">Return to questions</button>
     `,true);
   } finally {
