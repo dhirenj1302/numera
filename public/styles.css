@@ -551,3 +551,7 @@
 .meridiem-btn{border:0;background:#f2f4f7;font-weight:800;font-size:15px;padding:12px 16px;cursor:pointer;color:#475467;min-width:52px}
 .meridiem-btn+.meridiem-btn{border-left:1px solid #d0d5dd}
 .meridiem-btn.selected{background:var(--purple,#6b4eff);color:#fff}
+
+/* --- Per-box units for conversion sequences (v2.24) --- */
+.sequence-unit-group{display:inline-flex;align-items:center;gap:4px;margin-right:10px}
+.sequence-unit{font-weight:800;color:var(--muted,#667085);font-size:15px}

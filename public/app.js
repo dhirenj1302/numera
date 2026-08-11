@@ -1122,6 +1122,30 @@ function multipartMarkerCount(text=""){
 
 function normaliseMultipartQuestion(q){
   q.parts=Array.isArray(q.parts)?q.parts:[];
+  // A unit conversion like "98mm = _ cm _ mm" is sometimes mislabelled as
+  // multipart, but it's one instruction with unit boxes, not separate parts.
+  // Signature: 2+ parts, every part a plain-number answer with a unit, and no
+  // distinct part wording (prompt empty, a bare "Part x", or just the unit). If
+  // so, convert to a sequence with per-box units so the child gets clean number
+  // boxes. Only triggers on that exact shape, so real multipart is untouched.
+  if(q.type==="multipart" && !q.type_user_set && q.parts.length>1){
+    const looksLikeConversion=q.parts.every(p=>{
+      const ans=String(p.answer??"").trim();
+      const isPlainNumber=/^-?\d+(\.\d+)?$/.test(ans);
+      const prompt=String(p.prompt??"").trim().toLowerCase();
+      const unit=String(p.answer_unit??"").trim().toLowerCase();
+      const noDistinctPrompt = prompt==="" || /^part\s*[a-f]$/.test(prompt) || prompt===unit;
+      return isPlainNumber && noDistinctPrompt && !!unit;
+    });
+    if(looksLikeConversion){
+      q.type="sequence";
+      q.answer=q.parts.map(p=>String(p.answer).trim()).join(",");
+      q.answer_unit=q.parts.map(p=>String(p.answer_unit).trim()).join(",");
+      q.sequence_count=q.parts.length;
+      q.parts=[];
+      return q;
+    }
+  }
   if(q.parts.length>1){
     q.type="multipart";
     q.parts=q.parts.map((p,i)=>({
@@ -1678,10 +1702,20 @@ function sequenceCount(item){
 }
 function sequenceMarkup(idBase,item){
   const count=sequenceCount(item);
-  const boxes=Array.from({length:count},(_,k)=>
-    `<input id="${idBase}_${k}" class="sequence-box" inputmode="decimal" autocomplete="off" aria-label="Number ${k+1} of ${count}">`
-  ).join('<span class="sequence-sep">,</span>');
-  return `<div class="sequence-answer"><div class="sequence-hint">Fill each box in order.</div><div class="sequence-boxes">${boxes}</div>${item.answer_unit?`<span class="answer-unit">${esc(item.answer_unit)}</span>`:""}</div>`;
+  // answer_unit may be a single unit ("cm") shown once at the end, OR a comma
+  // list ("cm,mm") giving each box its own unit — used for unit-conversion
+  // questions like "98mm = _ cm _ mm". Per-box units read far more clearly.
+  const unitList=String(item.answer_unit||"").split(",").map(u=>u.trim()).filter(Boolean);
+  const perBoxUnits = unitList.length>1;
+  const boxes=Array.from({length:count},(_,k)=>{
+    const box=`<input id="${idBase}_${k}" class="sequence-box" inputmode="decimal" autocomplete="off" aria-label="Number ${k+1} of ${count}${perBoxUnits&&unitList[k]?` (${unitList[k]})`:""}">`;
+    if(perBoxUnits){
+      return `<span class="sequence-unit-group">${box}${unitList[k]?`<span class="sequence-unit">${esc(unitList[k])}</span>`:""}</span>`;
+    }
+    return box;
+  }).join(perBoxUnits ? "" : '<span class="sequence-sep">,</span>');
+  const trailingUnit = (!perBoxUnits && item.answer_unit) ? `<span class="answer-unit">${esc(item.answer_unit)}</span>` : "";
+  return `<div class="sequence-answer"><div class="sequence-hint">Fill each box in order.</div><div class="sequence-boxes">${boxes}</div>${trailingUnit}</div>`;
 }
 // Collect the boxes into a normalised comma string ("20,22,24"). Returns null if
 // any box is empty so the child is prompted to complete it. Order is preserved,
