@@ -66,7 +66,17 @@ async function loginSetter(db, body, username) {
   if (!row || (await hashPin(body.pin, row.pin_salt)) !== row.pin_hash) {
     return json({ error: "Username or PIN not recognised." }, { status: 401 });
   }
-  const token = await sessionToken();
+  // Don't invalidate other signed-in sessions on every login. If a valid token
+  // already exists, reuse it and just extend the expiry — so signing in on a
+  // second tab/device (or re-entering the PIN) doesn't kick out the session that
+  // is mid-way through reviewing/publishing a homework. Only mint a fresh token
+  // when there isn't a usable one.
+  // D1 stores datetimes as "YYYY-MM-DD HH:MM:SS" (UTC); convert to ISO for Date.
+  const expiresMs = row.session_expires
+    ? new Date(String(row.session_expires).replace(" ", "T") + "Z").getTime()
+    : 0;
+  const stillValid = !!row.session_token && expiresMs > Date.now();
+  const token = stillValid ? row.session_token : await sessionToken();
   await db
     .prepare("UPDATE setters SET session_token=?,session_expires=datetime('now',?) WHERE username=?")
     .bind(token, SESSION_WINDOW, username)
