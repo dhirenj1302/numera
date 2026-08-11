@@ -49,14 +49,17 @@ async function openaiResponsesCall(apiKey, payload, { retries = 2 } = {}) {
     } catch (err) {
       clearTimeout(timer);
       if (err?.noRetry) throw err;
-      // Timeout (abort) or network throw — retry if attempts remain.
+      // A timeout already consumed the full per-call budget; retrying another
+      // full attempt would exceed the request time budget and leave the UI
+      // hanging. So fail through on timeout, but DO retry fast-failing network
+      // errors (which return quickly, like a transient 520 dropped connection).
       const isTimeout = err?.name === "AbortError";
-      if (attempt < retries) {
+      if (!isTimeout && attempt < retries) {
         await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
-        lastErr = isTimeout ? new Error("The worksheet reader timed out. Please try again.") : err;
+        lastErr = err;
         continue;
       }
-      throw lastErr || (isTimeout ? new Error("The worksheet reader timed out. Please try again.") : err);
+      throw isTimeout ? new Error("The worksheet reader timed out. Please try again.") : (lastErr || err);
     }
   }
   throw lastErr || new Error("OpenAI request failed.");
@@ -301,7 +304,7 @@ Only populate these fields with meaningful values when the selected question typ
     ]}],
     text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
     max_output_tokens:6000
-  },{retries:0});
+  },{retries:1});
 
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
