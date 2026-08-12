@@ -303,7 +303,7 @@ Only populate these fields with meaningful values when the selected question typ
       {type:"input_image",image_url:imageUrl,detail:"high"}
     ]}],
     text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
-    max_output_tokens:10000
+    max_output_tokens:12000
   },{retries:1});
 
   const raw=outputText(data);
