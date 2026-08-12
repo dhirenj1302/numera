@@ -839,8 +839,13 @@ async function imageToJpegDataURL(file){
     reader.onload=()=>resolve(reader.result); reader.onerror=()=>reject(new Error("One image could not be opened."));
     reader.readAsDataURL(file);
   });
+  return downscaleDataUrl(source, file.name);
+}
+// Downscale/normalise an image that is ALREADY a data URL (e.g. an image already
+// attached to a question), without needing a File object.
+async function downscaleDataUrl(source, label="image"){
   const img = await new Promise((resolve,reject)=>{
-    const image = new Image(); image.onload=()=>resolve(image); image.onerror=()=>reject(new Error(`Could not read ${file.name}. Use a JPG, PNG or a fresh camera photo.`)); image.src=source;
+    const image = new Image(); image.onload=()=>resolve(image); image.onerror=()=>reject(new Error(`Could not read ${label}. Use a JPG, PNG or a fresh camera photo.`)); image.src=source;
   });
   const maxSide=1800;
   const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
@@ -1123,7 +1128,10 @@ async function extractHomework(){
     state.sourceImages=images;
     const status=document.querySelectorAll(".processing-list div");
     status[0]?.classList.remove("active"); status[1]?.classList.add("active");
-    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images}), timeoutMs:85000});
+    // Each page is read sequentially on the server, so allow more time for more
+    // pages. ~55s per page + headroom, capped so it can't hang absurdly long.
+    const extractTimeout=Math.min(240000, 40000 + images.length*55000);
+    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images}), timeoutMs:extractTimeout});
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
     status[1]?.classList.remove("active"); status[2]?.classList.add("active");
     state.draft=await attachQuestionVisuals(state.draft);
@@ -1321,18 +1329,77 @@ window.uploadQuestionImage = (i, input) => {
   if(file.size>8*1024*1024){ alert("That image is quite large (over 8MB). Please choose a smaller photo."); input.value=""; return; }
   syncEditors();
   const reader=new FileReader();
-  reader.onload=()=>{
+  reader.onload=async ()=>{
+    const dataUrl=String(reader.result||"");
     const q=state.draft.questions[i];
-    q.visual_data_url=String(reader.result||"");
+    q.visual_data_url=dataUrl;
     q.needs_visual=true;
     q.visual_user_adjusted=true;
     q.source_label=q.source_label||"Uploaded image";
+    // Attach the image immediately, then read it with AI to fill the question.
     renderReview();
     setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+    await readQuestionImageWithAI(i, dataUrl);
   };
   reader.onerror=()=>alert("Sorry, that image could not be read. Please try another.");
   reader.readAsDataURL(file);
 };
+
+// Send a single uploaded image through the AI reader and populate THIS question
+// (and append any extra questions the image contained). Runs the same extraction
+// the initial upload uses, so an added question gets the same teaching content.
+async function readQuestionImageWithAI(i, dataUrl){
+  const card=()=>document.querySelector(`[data-i="${i}"]`);
+  const btn=document.querySelector(`[onclick="suggestOptions(${i})"]`); // any control to reflect busy state
+  // Show a lightweight reading indicator on the card.
+  let banner=card()?.querySelector(".ai-read-banner");
+  if(card() && !banner){
+    banner=document.createElement("div");
+    banner.className="ai-read-banner";
+    banner.innerHTML=`<span class="spinner-inline"></span> Reading the image with AI…`;
+    card().querySelector(".question-image-actions")?.after(banner);
+  }
+  try{
+    const shrunk=await downscaleDataUrl(dataUrl, "the uploaded image"); // downscale/normalise like the main upload
+    const result=await api("/api/extract",{method:"POST",body:JSON.stringify({images:[shrunk]}),timeoutMs:95000});
+    const read=(result.questions||[])[0];
+    if(!read){ throw new Error("No question could be read from that image."); }
+
+    // Populate THIS question from the first read question, preserving the image.
+    const q=state.draft.questions[i];
+    const keepImage=q.visual_data_url;
+    Object.assign(q, read, {
+      visual_data_url: keepImage,
+      needs_visual: true,
+      visual_user_adjusted: true,
+      source_label: "Uploaded image",
+      page_index: q.page_index ?? 0,
+      page_number: q.page_number ?? 1,
+      type_user_set: false
+    });
+
+    // If the image held MORE than one question, append the rest as new questions.
+    const extra=(result.questions||[]).slice(1);
+    for(const ex of extra){
+      state.draft.questions.push({
+        ...ex,
+        visual_data_url: keepImage,
+        needs_visual: true,
+        source_label: "Uploaded image",
+        page_index: 0, page_number: 1
+      });
+    }
+
+    state.draft.questions=state.draft.questions.map(normaliseMultipartQuestion);
+    saveDraft();
+    renderReview();
+    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+  }catch(e){
+    // Reading failed — keep the image attached as a static picture and let the
+    // teacher fill the fields manually. Never lose their work.
+    if(banner) banner.innerHTML=`<span class="ai-read-error">Couldn't read that image automatically — you can type the question in, or try a clearer photo.</span>`;
+  }
+}
 
 window.addQuestionPart=i=>{syncEditors();const q=state.draft.questions[i];q.type="multipart";q.parts||=[];const n=q.parts.length;q.parts.push({label:String.fromCharCode(97+n),prompt:"",answer:"",answer_unit:"",type:"number"});renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};
 window.deleteQuestionPart=(i,pi)=>{syncEditors();const q=state.draft.questions[i];q.parts.splice(pi,1);q.parts.forEach((p,n)=>p.label=String.fromCharCode(97+n));renderReview();setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);};

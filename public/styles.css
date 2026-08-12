@@ -555,3 +555,9 @@
 /* --- Per-box units for conversion sequences (v2.24) --- */
 .sequence-unit-group{display:inline-flex;align-items:center;gap:4px;margin-right:10px}
 .sequence-unit{font-weight:800;color:var(--muted,#667085);font-size:15px}
+
+/* --- AI-read-image banner on added questions (v2.29) --- */
+.ai-read-banner{display:flex;align-items:center;gap:8px;font-size:13px;color:#3f4ba8;background:#eef2ff;border-radius:8px;padding:8px 10px;margin:8px 0}
+.spinner-inline{width:14px;height:14px;border:2px solid #c7d0f5;border-top-color:#3f4ba8;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite}
+.ai-read-error{color:#b42318}
+@keyframes spin{to{transform:rotate(360deg)}}
