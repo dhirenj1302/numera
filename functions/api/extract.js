@@ -303,17 +303,22 @@ Only populate these fields with meaningful values when the selected question typ
       {type:"input_image",image_url:imageUrl,detail:"high"}
     ]}],
     text:{format:{type:"json_schema",name:"numera_page",strict:true,schema:pageSchema}},
-    max_output_tokens:6000
+    max_output_tokens:10000
   },{retries:1});
 
   const raw=outputText(data);
   if(!raw) throw new Error("OpenAI returned no page data.");
+  // If the model hit the output-token ceiling the JSON is truncated and won't
+  // parse. Detect that and give useful guidance rather than a cryptic error.
+  if(data.status==="incomplete" && data.incomplete_details?.reason==="max_output_tokens"){
+    throw new Error("This page has too many questions to read in one go. Please photograph half the page at a time.");
+  }
   try{
     const parsed=JSON.parse(raw);
     parsed.questions=await repairMissedMultipart(context,imageUrl,pageIndex,parsed.questions||[]);
     return parsed;
   }catch(error){
-    if(error instanceof SyntaxError) throw new Error("OpenAI returned an invalid page format.");
+    if(error instanceof SyntaxError) throw new Error("This page was hard to read cleanly. Try a sharper, closer photo, or photograph half the page at a time.");
     throw error;
   }
 }
