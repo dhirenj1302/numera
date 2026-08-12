@@ -3,8 +3,8 @@ const app = $("#app");
 const state = {
   files: [],
   sourceImages: [],
-  draft: null,
-  editingHomeworkId: null,
+  draft: JSON.parse(localStorage.getItem("numera:draft")||"null"),
+  editingHomeworkId: localStorage.getItem("numera:editingHomeworkId") || null,
   homework: null,
   studentName: "",
   studentUsername: localStorage.getItem("numera:studentUsername") || "",
@@ -21,6 +21,25 @@ const state = {
   matchingSelections: {},
   voiceEnabled: localStorage.getItem("numera:voiceEnabled") === "true"
 };
+
+// Persist the review draft so a page refresh doesn't lose the teacher's reviewed
+// questions. The draft can be large (it carries per-question image data URLs), so
+// we guard against quota errors and simply skip persistence if it won't fit
+// rather than breaking the app.
+function saveDraft(){
+  try{
+    if(state.draft){
+      localStorage.setItem("numera:draft", JSON.stringify(state.draft));
+      if(state.editingHomeworkId) localStorage.setItem("numera:editingHomeworkId", state.editingHomeworkId);
+      else localStorage.removeItem("numera:editingHomeworkId");
+    }
+  }catch(e){ /* quota exceeded (large images) — refresh-restore just won't be available */ }
+}
+function clearDraft(){
+  state.draft=null;
+  localStorage.removeItem("numera:draft");
+  localStorage.removeItem("numera:editingHomeworkId");
+}
 
 const cropEditor = {
   questionIndex: null,
@@ -1108,6 +1127,7 @@ async function extractHomework(){
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
     status[1]?.classList.remove("active"); status[2]?.classList.add("active");
     state.draft=await attachQuestionVisuals(state.draft);
+    saveDraft();
     renderReview();
   } catch(e){
     app.innerHTML = shell(`
@@ -1368,6 +1388,7 @@ function syncEditors(){
       }
     }
   });
+  saveDraft();
 }
 // On-demand: ask the backend to suggest multiple-choice options for question i —
 // the correct answer plus diagnostic distractors (each tied to a common mistake).
@@ -1497,6 +1518,7 @@ window.publishHomework = async () => {
       state.homework={...result,title,topic,questions:state.draft.questions};
       const savedId=state.editingHomeworkId;
       state.editingHomeworkId=null;
+      clearDraft();
       alert("Homework changes saved.");
       location.hash=`#/edit-homework?id=${savedId}`;
     }else{
@@ -1504,6 +1526,7 @@ window.publishHomework = async () => {
       state.homework={...result,title,topic,questions:state.draft.questions};
       state.reusedFromTitle="";
       localStorage.setItem("numera:lastHomework",result.id);
+      clearDraft();
       location.hash="#/published";
     }
   } catch(e){
