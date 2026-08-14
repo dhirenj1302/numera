@@ -1,5 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
+const NUMERA_VERSION = "v2.30";
 const state = {
   files: [],
   sourceImages: [],
@@ -130,7 +131,7 @@ const shell = (content, back=false) => {
       ${backHandler ? `<button class="btn ghost" onclick="${backHandler}" aria-label="Go back">←</button>` : ""}
       <a class="brand-link" href="#/" aria-label="Numera home"><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></a>
     </div>
-    <span class="pill green">Prototype</span>
+    <span class="pill green">Prototype <span style="opacity:.7;font-weight:600">${NUMERA_VERSION}</span></span>
   </header>
   <main>${content}</main>
   <div class="footer-note">Every mistake is a step forward.</div>
@@ -1440,6 +1441,12 @@ function syncEditors(){
     // numbers in a series/pattern, OR an answer that is a comma-list of numbers.
     // Same override rules as "draw" — never fights a type the teacher chose.
     else if(!q.type_user_set && q.type==="number"){
+      // Fraction answer: a single "n/d" (e.g. "2/9"). The keypad has no "/", and
+      // the fraction type gives separate numerator/denominator boxes. Check this
+      // first, before the number-sequence check.
+      const isFraction=/^\s*-?\d+\s*\/\s*\d+\s*$/.test(String(q.answer||""));
+      if(isFraction){ q.type="fraction"; }
+      else {
       const seqWording=/\b(next\s+numbers?|missing\s+numbers?|continue\s+the\s+(pattern|sequence)|number\s+(sequence|pattern|snake)|count(ing)?\s+(in|up|back|on)\b|fill\s+in\s+the\s+(sequence|pattern|numbers))\b/i.test(String(q.prompt||""));
       const answerIsList=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.answer||""));
       if(seqWording || answerIsList){ q.type="sequence"; }
@@ -1452,6 +1459,7 @@ function syncEditors(){
         if(!(q.options||[]).filter(o=>String(o).trim()).length){
           q.options=[String(q.answer).trim()]; // seed with the correct answer; teacher/AI add distractors
         }
+      }
       }
     }
   });
