@@ -561,3 +561,10 @@
 .spinner-inline{width:14px;height:14px;border:2px solid #c7d0f5;border-top-color:#3f4ba8;border-radius:50%;display:inline-block;animation:spin 0.8s linear infinite}
 .ai-read-error{color:#b42318}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* --- Correction-feedback impact loop (v2.31) --- */
+.impact-card{background:linear-gradient(135deg,#fbf6e9,#f4f6fa);border:1px solid #ecdfba}
+.impact-row{display:flex;align-items:baseline;gap:10px;margin:6px 0}
+.impact-num{font-size:30px;font-weight:800;color:#1F2A44;line-height:1}
+.impact-label{color:#33415C;font-weight:600;font-size:14px}
+.impact-note{margin:10px 0 2px;color:#5A6474;font-size:13px;line-height:1.5}

@@ -1132,10 +1132,16 @@ async function extractHomework(){
     // Each page is read sequentially on the server, so allow more time for more
     // pages. ~55s per page + headroom, capped so it can't hang absurdly long.
     const extractTimeout=Math.min(240000, 40000 + images.length*55000);
-    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images}), timeoutMs:extractTimeout});
+    state.draft = await api("/api/extract", {method:"POST", body:JSON.stringify({images, setter_username:state.setterSession?.username||"", token:state.setterSession?.token||""}), timeoutMs:extractTimeout});
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
     status[1]?.classList.remove("active"); status[2]?.classList.add("active");
     state.draft=await attachQuestionVisuals(state.draft);
+    // Snapshot what the AI produced, so at publish we can detect what the teacher
+    // actually corrected (the correction-feedback loop). Only set once, from the
+    // fresh AI output — never overwritten by later edits.
+    (state.draft.questions||[]).forEach(q=>{
+      q._ai_original={ answer:String(q.answer??""), prompt:String(q.prompt??""), type:String(q.type??"") };
+    });
     saveDraft();
     renderReview();
   } catch(e){
@@ -1524,6 +1530,39 @@ window.addQuestion = () => {
   renderReview();
 };
 
+// Detect what the teacher actually changed from the AI's output, and record it
+// (best-effort). This is the correction-feedback loop's capture step. Only counts
+// REAL differences — nothing inflated.
+async function recordCorrections(homeworkId){
+  try{
+    if(!state.setterSession?.username || !state.setterSession?.token) return;
+    const qs=state.draft?.questions||[];
+    const corrections=[];
+    for(const q of qs){
+      const orig=q._ai_original;
+      if(!orig) continue;
+      const topic=String(q.topic||q.concept_key||"").trim();
+      if(String(q.answer??"")!==orig.answer && (orig.answer||q.answer)){
+        corrections.push({field:"answer",ai_value:orig.answer,teacher_value:String(q.answer??""),question_topic:topic,concept_key:q.concept_key||""});
+      }
+      if(String(q.type??"")!==orig.type && orig.type){
+        corrections.push({field:"type",ai_value:orig.type,teacher_value:String(q.type??""),question_topic:topic,concept_key:q.concept_key||""});
+      }
+      if(String(q.prompt??"").trim()!==orig.prompt.trim() && orig.prompt){
+        corrections.push({field:"prompt",ai_value:orig.prompt,teacher_value:String(q.prompt??""),question_topic:topic,concept_key:q.concept_key||""});
+      }
+    }
+    await api("/api/corrections",{method:"POST",body:JSON.stringify({
+      action:"record",
+      setter_username:state.setterSession.username,
+      token:state.setterSession.token,
+      homework_id:homeworkId,
+      corrections,
+      questions_reviewed:qs.length
+    })});
+  }catch(e){ /* best-effort — never block publishing on the feedback loop */ }
+}
+
 window.publishHomework = async () => {
   syncEditors();
   const title=(state.draft.title||$("#title")?.value||"").trim() || "Year 4 Maths";
@@ -1601,6 +1640,7 @@ window.publishHomework = async () => {
       state.homework={...result,title,topic,questions:state.draft.questions};
       state.reusedFromTitle="";
       localStorage.setItem("numera:lastHomework",result.id);
+      recordCorrections(result.id); // best-effort; feeds the correction loop
       clearDraft();
       location.hash="#/published";
     }
@@ -1635,6 +1675,7 @@ function renderPublished(){
       <h1>Homework is ready!</h1>
       <p class="muted">${esc(h.title)}</p>
     </div>
+    <div id="impactLoop"></div>
     <div class="card">
       <label>Student / parent link</label>
       <div class="row" style="margin-top:8px"><input id="studentLink" readonly value="${student}"><button class="btn secondary" onclick="copyField('studentLink')">Copy</button></div>
@@ -1647,6 +1688,37 @@ function renderPublished(){
       <a class="btn primary block" style="margin-top:14px;text-decoration:none" href="#/results?id=${h.id}">Open dashboard</a>
     </div>
   `,true);
+  showImpactLoop();
+}
+
+// The visible "loop" — the Stories-style "seen by" moment. After the teacher
+// publishes, show their real accumulated impact: questions they've reviewed
+// (time saved) and corrections they've made (which make Numera read their
+// worksheets better). Only shows real numbers; silent if unavailable.
+async function showImpactLoop(){
+  const el=$("#impactLoop");
+  if(!el || !state.setterSession?.username || !state.setterSession?.token) return;
+  try{
+    const r=await api(`/api/corrections?setter_username=${encodeURIComponent(state.setterSession.username)}&token=${encodeURIComponent(state.setterSession.token)}`);
+    const reviewed=Number(r.questions_reviewed||0);
+    const corrections=Number(r.corrections_made||0);
+    if(reviewed<=0 && corrections<=0) return; // nothing honest to show yet
+    // ~2 minutes saved per question a teacher would otherwise mark by hand.
+    const minutesSaved=Math.round(reviewed*2);
+    const timePhrase = minutesSaved>=60
+      ? `about ${Math.round(minutesSaved/60)} hour${Math.round(minutesSaved/60)===1?"":"s"}`
+      : `about ${minutesSaved} minutes`;
+    const theme=(r.themes||[]).find(t=>t.question_topic);
+    const themeLine = corrections>0
+      ? `Your ${corrections} correction${corrections===1?"":"s"} ${corrections===1?"is":"are"} teaching Numera to read your worksheets more accurately${theme?` — especially ${esc(theme.question_topic)} questions`:""}.`
+      : "";
+    el.innerHTML=`
+      <div class="card impact-card">
+        <div class="impact-row"><span class="impact-num">${reviewed}</span><span class="impact-label">questions reviewed &middot; ${timePhrase} of marking saved</span></div>
+        ${corrections>0?`<div class="impact-row"><span class="impact-num">${corrections}</span><span class="impact-label">corrections that improve Numera for your class</span></div>`:""}
+        ${themeLine?`<p class="impact-note">${themeLine}</p>`:""}
+      </div>`;
+  }catch(e){ /* silent — the loop is a bonus, never an error surface */ }
 }
 window.copyField=async id=>{await navigator.clipboard.writeText($("#"+id).value); alert("Copied.");};
 window.shareLink=async url=>{
