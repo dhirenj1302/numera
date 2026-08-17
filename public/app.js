@@ -2335,7 +2335,7 @@ function renderQuestion(){
   const pct=(state.index/n)*100;
   const body=q.type==="multiple_choice"
     ? ((q.options||[]).filter(o=>String(o).trim()).length>=2
-        ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}')">${esc(String(o))}</button>`).join("")}</div>`
+        ? `<div class="options">${(q.options||[]).map(o=>`<button class="option ${state.selected===String(o)?"selected":""}" onclick="selectOption('${js(String(o))}',{spoken:true})">${esc(String(o))}</button>`).join("")}</div>`
         : `<div class="mc-fallback-note">Type your answer below.</div><input id="answerInput" class="answer-input" inputmode="numeric" autocomplete="off" placeholder="Your answer" value="${esc(state.selected||"")}" oninput="selectOption(this.value)">`)
     : q.type==="drawing"
       ? drawingMarkup(q)
@@ -2385,7 +2385,21 @@ function renderQuestion(){
   }
   if (state.voiceEnabled) setTimeout(() => speak(`Question ${state.index + 1}. ${q.prompt}`), 120);
 }
-window.selectOption=v=>{state.selected=v;renderQuestion();};
+window.selectOption=(v,opts={})=>{
+  state.selected=v;
+  // For a multiple-choice CHOICE (a button tap), don't re-render the whole
+  // question — that would re-read the question aloud. Instead update just the
+  // option highlighting and read the SELECTED OPTION aloud, so the child hears
+  // what they picked. For the typed-answer fallback we neither re-render nor
+  // speak (that would talk on every keystroke).
+  if(opts.spoken){
+    document.querySelectorAll(".options .option").forEach(btn=>{
+      btn.classList.toggle("selected", btn.textContent===String(v));
+    });
+    if(state.voiceEnabled) speak(String(v), true);
+    return;
+  }
+};
 function getStudentAnswer(q){
   if(q.type==="multiple_choice") return state.selected;
   if(q.type==="drawing") return drawingAnswer();
@@ -2413,6 +2427,10 @@ function getStudentAnswer(q){
 }
 function normalise(v){
   let raw=String(v).trim().toLowerCase().replace(/\s+/g,"").replace(/,/g,"");
+  // A stored answer may carry a true minus sign "−" (U+2212) from extraction,
+  // while a child types a hyphen "-" on the keypad. Treat them as equal. Also
+  // fold other dash-like characters to a plain hyphen.
+  raw=raw.replace(/[\u2212\u2012\u2013\u2014]/g,"-");
   // Time with optional am/pm: canonicalise to "h:mm" or "h:mmam"/"h:mmpm".
   const tm=raw.match(/^(\d{1,2}):(\d{1,2})(a\.?m\.?|p\.?m\.?)?$/);
   if(tm){
@@ -2668,6 +2686,11 @@ async function finishHomework(){
   // understanding model is a deliberate future step, handled separately.)
   if(state.homework.is_level_up){
     const mastered=state.attempts.filter(a=>a.mastered||a.first_correct).length;
+    // Record the outcome against each question's ORIGINAL homework so a question
+    // the child now got right graduates out of their weak pool and won't reappear
+    // in future Level Ups (and once the pool is small enough, Level Up stops being
+    // offered). Best-effort — never block the celebration on it.
+    recordLevelUpResults();
     return renderLevelUpComplete(mastered,total);
   }
 
@@ -2914,6 +2937,34 @@ window.startLevelUp=async()=>{
     renderMission();
   }catch(e){ alert(e.message); }
 };
+
+async function recordLevelUpResults(){
+  try{
+    if(!state.studentUsername || !state.studentToken) return;
+    const qs=state.homework?.questions||[];
+    const results=[];
+    for(let i=0;i<qs.length;i++){
+      const src=qs[i]?.level_up_source;
+      if(!src || !src.homework_id) continue; // only graduate questions with known origin
+      const a=state.attempts[i]||{};
+      results.push({
+        homework_id:src.homework_id,
+        question_index:Number(src.question_index),
+        concept_key:qs[i].concept_key||"",
+        correct:(a.first_correct===true || a.mastered===true),
+        hint_used:a.hint_used===true,
+        highest_hint_level:Number(a.highest_hint_level)||0,
+        retries:Number(a.retries)||0
+      });
+    }
+    if(!results.length) return;
+    await api("/api/level-up",{method:"POST",body:JSON.stringify({
+      student_username:state.studentUsername,
+      student_token:state.studentToken,
+      results
+    })});
+  }catch(e){ /* best-effort: never block the child's celebration */ }
+}
 
 function renderLevelUpComplete(mastered,total){
   const pct=Math.round(mastered/Math.max(1,total)*100);
