@@ -18,6 +18,81 @@ const MIN_WEAK_FOR_LEVEL_UP = 5;
 const MAX_QUESTIONS = 10;
 const MIN_QUESTIONS = 5;
 
+// Record the outcome of a completed Level Up test. Each answered question is
+// written back as a fresh attempt AGAINST ITS ORIGINAL homework/question, so the
+// weak-pool query (which keeps the newest attempt per question) will graduate a
+// question the child now got right — it leaves the weak pool and won't reappear
+// in future Level Ups. Once the pool falls below MIN_WEAK_FOR_LEVEL_UP, Level Up
+// stops being offered. This preserves all understanding data; it only updates it.
+export async function onRequestPost(context) {
+  try {
+    const db = context.env.DB;
+    const body = await context.request.json();
+    const studentUsername = clean(body.student_username);
+    const studentToken = body.student_token;
+
+    const student = await db.prepare(
+      "SELECT username FROM students WHERE username=? AND session_token=? AND session_expires>CURRENT_TIMESTAMP"
+    ).bind(studentUsername, studentToken).first();
+    if (!student) return json({ error: "Session expired. Please sign in again." }, { status: 401 });
+
+    const results = Array.isArray(body.results) ? body.results : [];
+    if (!results.length) return json({ ok: true, graduated: 0 });
+
+    // Group results by their ORIGINAL homework, and append an attempt per question
+    // to that homework's most recent submission for this student (or create a
+    // small level-up submission if none exists). Newest-attempt-wins in the weak
+    // query means a correct, hint-free attempt here scores weakness 0 => graduates.
+    let graduated = 0;
+    const byHw = new Map();
+    for (const r of results) {
+      const hwId = clean(r.homework_id);
+      const qi = Number(r.question_index);
+      if (!hwId || !Number.isFinite(qi)) continue;
+      if (!byHw.has(hwId)) byHw.set(hwId, []);
+      const firstCorrect = r.correct === true && r.hint_used !== true;
+      if (firstCorrect) graduated++;
+      byHw.get(hwId).push({
+        question_index: qi,
+        concept_key: clean(r.concept_key) || "",
+        first_correct: firstCorrect,
+        mastered: r.correct === true,
+        hint_used: r.hint_used === true,
+        highest_hint_level: Number(r.highest_hint_level) || 0,
+        retries: Number(r.retries) || 0,
+        source: "level_up",
+        answered_at: new Date().toISOString()
+      });
+    }
+
+    const stmts = [];
+    for (const [hwId, attempts] of byHw) {
+      const id = crypto.randomUUID();
+      const total = attempts.length;
+      const correct = attempts.filter(a => a.first_correct).length;
+      stmts.push(
+        db.prepare(
+          `INSERT INTO submissions
+             (id, homework_id, student_name, student_username,
+              original_score, mastery_score, total_questions,
+              attempts_json, strengths_json, needs_practice_json, completed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+        ).bind(
+          id, hwId, studentUsername, studentUsername,
+          correct, correct, total,
+          JSON.stringify(attempts), "[]", "[]"
+        )
+      );
+    }
+    if (stmts.length) await db.batch(stmts);
+
+    return json({ ok: true, graduated });
+  } catch (error) {
+    return json({ error: error.message }, { status: 500 });
+  }
+}
+
+
 export async function onRequestGet(context) {
   try {
     const url = new URL(context.request.url);

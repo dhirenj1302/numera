@@ -1,3 +1,5 @@
+import { validSetter } from "./_lib.js";
+
 // Call the OpenAI Responses API with a per-attempt TIMEOUT and limited retries.
 // Cloudflare Pages Functions have a request time budget, so we must never let a
 // single call hang and never retry so long that the whole request is killed
@@ -253,13 +255,54 @@ async function repairMissedMultipart(context,imageUrl,pageIndex,questions){
   return repaired;
 }
 
-async function extractPage(context,imageUrl,pageIndex){
-  const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.
+// Build few-shot correction guidance from a teacher's past corrections. Reads
+// the most common corrections this teacher has made and turns them into a short
+// prompt preamble so the reader avoids repeating the same mistakes on this
+// teacher's worksheets. In-context learning, not retraining. Best-effort: returns
+// "" on any problem so extraction is never blocked.
+async function buildCorrectionMemory(context, setterUsername, token){
+  const db=context.env.DB;
+  if(!db) return "";
+  const uname=String(setterUsername||"").trim().toLowerCase();
+  if(!(await validSetter(db, uname, token))) return "";
+
+  // Pull recent, topic-tagged corrections; keep a handful of the most instructive.
+  const { results=[] } = await db.prepare(
+    `SELECT field, ai_value, teacher_value, question_topic
+       FROM extraction_corrections
+      WHERE setter_username=? AND teacher_value IS NOT NULL AND teacher_value<>''
+      ORDER BY created_at DESC
+      LIMIT 12`
+  ).bind(uname).all();
+  if(!results.length) return "";
+
+  // Summarise as short, concrete reminders. Cap length so we never bloat the
+  // prompt (which would slow the call or risk truncation).
+  const lines=[];
+  for(const r of results){
+    const topic=r.question_topic?` (${String(r.question_topic).slice(0,40)})`:"";
+    if(r.field==="answer" && r.ai_value){
+      lines.push(`• On similar questions${topic}, the correct answer was "${String(r.teacher_value).slice(0,60)}", not "${String(r.ai_value).slice(0,60)}".`);
+    }else if(r.field==="type" && r.ai_value){
+      lines.push(`• Questions like this${topic} should be type "${String(r.teacher_value).slice(0,30)}", not "${String(r.ai_value).slice(0,30)}".`);
+    }else if(r.field==="prompt" && r.ai_value){
+      lines.push(`• Read the wording carefully${topic}; previously "${String(r.ai_value).slice(0,50)}" should have been "${String(r.teacher_value).slice(0,50)}".`);
+    }
+    if(lines.length>=6) break;
+  }
+  if(!lines.length) return "";
+  return `\n\nThis teacher has previously corrected the reader on their worksheets. Learn from these to avoid repeating the same mistakes:\n${lines.join("\n")}\n`;
+}
+
+async function extractPage(context,imageUrl,pageIndex,correctionMemory=""){
+  const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.${correctionMemory}
 
 Your first duty is faithful transcription. Read ONLY this page. Do not infer questions from another page and never substitute a typical or invented worksheet question.
 
 For every complete visible question:
 1. Preserve the actual wording, numbers, mathematical symbols, units, labels and printed answer choices.
+1a. FRACTIONS AS "n/d". Whenever a fraction appears anywhere — in the question wording OR in an answer — write it in plain "numerator/denominator" form using a forward slash, e.g. write one-half as "1/2", three-quarters as "3/4", seven-ninths as "7/9". Never use unicode fraction glyphs (½, ¾), never stack it, never write "1 over 2". This reads correctly when the question is spoken aloud.
+1b. MINUS SIGN, NOT HYPHEN. When the image shows a subtraction or negative sign, transcribe it as a real minus sign "−" (U+2212), not a hyphen "-". For example "7 − 5" and "−3", using "−". This ensures it is read aloud as "minus" rather than a dash. (Ranges or hyphenated words that are genuinely hyphens stay as hyphens; only mathematical minus/subtraction becomes "−".)
 2. Solve it and provide the correct answer.
 3. Create exactly four progressive hint tiers in the hints array:
    - Hint 1: a gentle orienting prompt. Do not name the operation or method.
@@ -325,10 +368,23 @@ Only populate these fields with meaningful values when the selected question typ
 
 export async function onRequestPost(context){
   try{
-    const {images=[]}=await context.request.json();
+    const {images=[], setter_username="", token=""}=await context.request.json();
     if(!images.length) return Response.json({error:"Upload at least one worksheet photo."},{status:400});
     if(!context.env.OPENAI_API_KEY) return Response.json({error:"OPENAI_API_KEY is missing from Cloudflare Production."},{status:503});
     if(images.length>6) return Response.json({error:"Upload no more than six pages at once."},{status:400});
+
+    // Correction memory (the "feed back" half of the loop). If we know the
+    // teacher, pull their most common past corrections and feed them into the
+    // extraction prompt as few-shot guidance, so the reader gets more accurate
+    // for THIS teacher over time. Fully optional and guarded: any failure here
+    // leaves extraction working exactly as before. This is in-context learning,
+    // NOT model retraining.
+    let correctionMemory="";
+    try{
+      if(setter_username && token){
+        correctionMemory=await buildCorrectionMemory(context, setter_username, token);
+      }
+    }catch(e){ correctionMemory=""; }
 
     const allQuestions=[];
     const warnings=[];
@@ -338,7 +394,7 @@ export async function onRequestPost(context){
     // dominating a single multi-image model response and preserves page order.
     for(let i=0;i<images.length;i++){
       try{
-        const page=await extractPage(context,images[i],i);
+        const page=await extractPage(context,images[i],i,correctionMemory);
         if(page.page_topic) pageTopics.push(page.page_topic);
         if(page.warning) warnings.push(`Page ${i+1}: ${page.warning}`);
         for(const question of page.questions||[]){
