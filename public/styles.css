@@ -568,3 +568,9 @@
 .impact-num{font-size:30px;font-weight:800;color:#1F2A44;line-height:1}
 .impact-label{color:#33415C;font-weight:600;font-size:14px}
 .impact-note{margin:10px 0 2px;color:#5A6474;font-size:13px;line-height:1.5}
+
+/* --- Owner corrections dashboard (v2.32) --- */
+.owner-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.owner-table th{text-align:left;color:#5A6474;font-weight:700;border-bottom:2px solid #E2E6ED;padding:6px 8px}
+.owner-table td{padding:6px 8px;border-bottom:1px solid #EEF1F6;color:#333;vertical-align:top}
+.owner-table tr:nth-child(even) td{background:#F9FAFC}

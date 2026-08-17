@@ -228,6 +228,7 @@ function router() {
   if (path === "/published") return renderPublished();
   if (path === "/play") return loadHomework(params.get("id"), params.get("preview")==="1"?"preview":"play");
   if (path === "/results") return loadHomework(params.get("id"), "results");
+  if (path === "/owner") return renderOwnerDashboard();
   renderNotFound(path);
 }
 window.addEventListener("hashchange",()=>{
@@ -241,6 +242,56 @@ window.addEventListener("popstate",()=>{
     setTimeout(router,0);
   }
 });
+
+// OWNER dashboard: correction intelligence across all teachers. Gated by an
+// owner key (kept only in this browser's localStorage after first entry). This
+// is where the platform owner sees what the reader gets wrong most often and
+// decides what warrants a systemic prompt fix. Read-only.
+async function renderOwnerDashboard(){
+  const savedKey=localStorage.getItem("numera:ownerKey")||"";
+  if(!savedKey){
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>Correction dashboard</h1><p class="muted">Enter the owner key to view correction patterns across all teachers.</p></section>
+      <div class="card">
+        <label>Owner key</label>
+        <input id="ownerKeyInput" type="password" placeholder="Owner key" autocomplete="off">
+        <button class="btn primary block" style="margin-top:12px" onclick="saveOwnerKey()">View dashboard</button>
+      </div>`,true);
+    return;
+  }
+  app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Owner</span><h1>Correction dashboard</h1><p class="muted">Loading…</p></section>`,true);
+  try{
+    const r=await api(`/api/admin-corrections?key=${encodeURIComponent(savedKey)}`);
+    const t=r.totals||{};
+    const savedHrs=Math.round((Number(t.total_questions_reviewed||0)*2)/60);
+    const fieldRows=(r.by_field||[]).map(f=>`<div class="impact-row"><span class="impact-num" style="font-size:22px">${f.n}</span><span class="impact-label">${esc(f.field)} corrections</span></div>`).join("");
+    const themeRows=(r.themes||[]).map(x=>`<tr><td>${esc(x.question_topic||"—")}</td><td>${esc(x.field)}</td><td style="text-align:right;font-weight:700">${x.n}</td></tr>`).join("");
+    const recentRows=(r.recent||[]).map(x=>`<tr><td>${esc(x.question_topic||"—")}</td><td>${esc(x.field)}</td><td>${esc((x.ai_value||"").slice(0,40))}</td><td>${esc((x.teacher_value||"").slice(0,40))}</td></tr>`).join("");
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>Correction dashboard</h1><p class="muted">What the reader gets corrected on, across all teachers.</p></section>
+      <div class="card impact-card">
+        <div class="impact-row"><span class="impact-num">${t.total_corrections||0}</span><span class="impact-label">total corrections from ${t.teachers_correcting||0} teacher${t.teachers_correcting===1?"":"s"}</span></div>
+        <div class="impact-row"><span class="impact-num">${t.total_questions_reviewed||0}</span><span class="impact-label">questions reviewed &middot; ~${savedHrs} hours of marking saved</span></div>
+      </div>
+      <div class="card"><h3 style="margin-top:0">Where the reader is weakest</h3>${fieldRows||"<p class='muted'>No corrections yet.</p>"}</div>
+      <div class="card"><h3 style="margin-top:0">Most-corrected topics</h3>
+        <p class="muted" style="font-size:13px">High counts here are candidates for a systemic prompt fix.</p>
+        <table class="owner-table"><thead><tr><th>Topic</th><th>Field</th><th style="text-align:right">Count</th></tr></thead><tbody>${themeRows||"<tr><td colspan='3' class='muted'>None yet.</td></tr>"}</tbody></table>
+      </div>
+      <div class="card"><h3 style="margin-top:0">Recent corrections (before → after)</h3>
+        <table class="owner-table"><thead><tr><th>Topic</th><th>Field</th><th>AI read</th><th>Teacher fixed</th></tr></thead><tbody>${recentRows||"<tr><td colspan='4' class='muted'>None yet.</td></tr>"}</tbody></table>
+      </div>
+      <button class="btn secondary block" onclick="clearOwnerKey()">Sign out of owner view</button>
+    `,true);
+  }catch(e){
+    const unauth=/not authorised|401/i.test(String(e.message));
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip error-chip">Owner</span><h1>Couldn’t load</h1><p class="muted">${esc(e.message)}</p></section>
+      <button class="btn primary block" onclick="clearOwnerKey()">${unauth?"Re-enter owner key":"Try again"}</button>`,true);
+  }
+}
+window.saveOwnerKey=()=>{const k=$("#ownerKeyInput")?.value.trim();if(!k)return;localStorage.setItem("numera:ownerKey",k);renderOwnerDashboard();};
+window.clearOwnerKey=()=>{localStorage.removeItem("numera:ownerKey");renderOwnerDashboard();};
 
 function renderNotFound(path){
   app.innerHTML=shell(`
