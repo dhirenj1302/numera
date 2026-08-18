@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.33";
+const NUMERA_VERSION = "v2.35";
 const state = {
   files: [],
   sourceImages: [],
@@ -61,7 +61,22 @@ function preferredVoice(){
 function speak(text, force=false){
   if (!("speechSynthesis" in window) || (!state.voiceEnabled && !force)) return;
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(String(text).replace(/<[^>]*>/g, " "));
+  // Clean the text for speech: remove HTML, and blanks written as runs of
+  // underscores/dashes (a "fill in the missing number" gap) which a screen reader
+  // otherwise announces as "underline underline underline". Read them as a short
+  // pause instead of saying anything.
+  const spoken = String(text)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/_{2,}/g, " ")           // "____" blank -> pause
+    .replace(/\b_\b/g, " ")           // a lone underscore
+    .replace(/[–—]{2,}/g, " ")        // long dash runs used as blanks
+    .replace(/\s*,\s*,\s*/g, ", ")    // collapse a comma left orphaned by a removed blank
+    .replace(/,\s*([,.?!])/g, "$1")   // remove a comma stranded before other punctuation
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.?!])/g, "$1")    // no space before punctuation
+    .trim();
+  if(!spoken) return;
+  const utterance = new SpeechSynthesisUtterance(spoken);
   utterance.lang = "en-GB";
   utterance.rate = 0.92;
   utterance.pitch = 1.05;
@@ -312,26 +327,58 @@ function renderNotFound(path){
 
 function renderLanding(){
   app.innerHTML=shell(`
-    <section class="hero landing-hero">
-      <div class="small">NUMERA</div>
-      <h1>Homework<br>that <span style="color:#34d399">teaches.</span></h1>
-      <p>Turn maths worksheets into interactive lessons that mark answers, explain mistakes and build a long-term picture of what each child understands.</p>
-      <div class="row wrap landing-actions">
-        <a class="btn green" href="#/teacher-account">Set homework</a>
-        <a class="btn secondary" href="#/review-access">Review work</a>
-        <a class="btn secondary" href="#/demo">Try student demo</a>
-      </div>
-    </section>
-    <section class="paper-comparison">
-      <span class="paper-comparison-kicker">Start without an email address</span>
-      <h2>Enter a username and name to set a homework task.</h2>
-      <p>For this early version, Numera does not ask for an email address. Teachers and parents who set work create a username, display name and four-digit PIN, then create student usernames under their account. Students use a valid username to open assigned work, while parents and teachers can review the appropriate history.</p>
-    </section>
-    <section class="workflow-grid">
-      <article><span>1</span><h3>Teacher</h3><p>The person setting the work—usually a teacher, but sometimes a parent—creates student profiles, publishes tasks and reviews progress.</p></article>
-      <article><span>2</span><h3>Student</h3><p>The child completes assigned work using a valid student username and PIN.</p></article>
-      <article><span>3</span><h3>Reviewer</h3><p>A parent reviews one child; a teacher reviews every student and homework they manage.</p></article>
-    </section>
+    <div class="landing2">
+      <section class="l-hero">
+        <div class="l-eyebrow"><span class="d"></span> Built with teachers, for teachers</div>
+        <h1>Homework that <em>marks itself</em> — and teaches while it does.</h1>
+        <p class="l-sub">Snap a photo of any maths worksheet. Numera turns it into homework that marks every answer, explains each mistake, and shows you exactly what your class understands.</p>
+        <div class="l-cta-row">
+          <a class="l-btn l-btn-primary" href="#/teacher-account">Set your first homework</a>
+          <a class="l-btn l-btn-ghost" href="#/demo">See a student demo</a>
+        </div>
+        <div class="l-trust">✎ No email needed to start &nbsp;·&nbsp; Free for your first class</div>
+        <div class="l-device">
+          <div class="l-screen">
+            <div class="l-qcard"><div class="qt">Fractions</div><div class="qn">7/9 − 5/9 = ?</div><span class="l-ok">✓ Correct — first try</span></div>
+            <div class="l-qcard"><div class="qt">Place value</div><div class="qn">Write 4602 in words</div><span class="l-hint">◐ Got it with a hint</span></div>
+            <div class="l-qcard"><div class="qt">Times tables</div><div class="qn">6 × 5 = ?</div><span class="l-ok">✓ Correct — first try</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="l-section">
+        <div class="l-kicker">Why teachers love it</div>
+        <h2>Less marking. More teaching.</h2>
+        <p class="l-secsub">Numera does the part of homework that eats your evenings, so you can spend your time on the part only you can do.</p>
+        <div class="l-cards">
+          <div class="l-card"><div class="l-ic l-ic1">⏱️</div><h3>Marking done for you</h3><p>Every answer marked the moment a child submits it. No red pen, no pile on your desk on Monday.</p></div>
+          <div class="l-card"><div class="l-ic l-ic2">💡</div><h3>Mistakes explained</h3><p>When a child gets stuck, Numera gives a gentle hint — not the answer — so they work it out and learn.</p></div>
+          <div class="l-card"><div class="l-ic l-ic3">📊</div><h3>See who understands</h3><p>A clear picture of what each child has grasped and where they need help, built from their real work.</p></div>
+        </div>
+      </section>
+
+      <section class="l-section">
+        <div class="l-how">
+          <div class="l-kicker">Up and running in minutes</div>
+          <h2>Your worksheet. Their homework. Your evening back.</h2>
+          <div class="l-steps">
+            <div class="l-step"><div class="sn">1</div><h4>Snap it</h4><p>Photograph any worksheet. Numera reads the questions.</p></div>
+            <div class="l-step"><div class="sn">2</div><h4>Check &amp; send</h4><p>Glance over what it read, tweak anything, share one link.</p></div>
+            <div class="l-step"><div class="sn">3</div><h4>See the results</h4><p>Children get instant feedback; you see how the class did.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="l-final">
+        <h2>Ready to stop marking?</h2>
+        <p>Set your first homework in the next five minutes. No email, no card, no catch.</p>
+        <a class="l-btn l-btn-primary" href="#/teacher-account">Set your first homework</a>
+      </section>
+
+      <section class="l-section" style="padding-top:20px">
+        <p class="l-secsub" style="margin-bottom:0;font-size:14.5px">Reviewing work you've already set? <a href="#/review-access" style="color:var(--l-violet);font-weight:800;text-decoration:none">Open the review area →</a></p>
+      </section>
+    </div>
   `);
 }
 
@@ -1718,8 +1765,12 @@ window.publishHomework = async () => {
 function renderPublished(){
   const h=state.homework;
   if(!h) return location.hash="#/teacher";
-  const student=`${location.origin}${location.pathname}#/play?id=${h.id}`;
-  const results=`${location.origin}${location.pathname}#/results?id=${h.id}`;
+  // Include a readable slug of the homework title in the link so a teacher can
+  // see at a glance which homework a link points to (routing still uses id).
+  const titleSlug=String(h.title||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40);
+  const nameParam=titleSlug?`&name=${titleSlug}`:"";
+  const student=`${location.origin}${location.pathname}#/play?id=${h.id}${nameParam}`;
+  const results=`${location.origin}${location.pathname}#/results?id=${h.id}${nameParam}`;
   app.innerHTML=shell(`
     <div class="mission">
       <div class="confetti">🎉 ✨ 🎉</div>
