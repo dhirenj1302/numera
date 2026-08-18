@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.30";
+const NUMERA_VERSION = "v2.33";
 const state = {
   files: [],
   sourceImages: [],
