@@ -632,3 +632,18 @@
 @media(max-width:640px){
   .landing2 .l-cards,.landing2 .l-steps{grid-template-columns:1fr}
 }
+
+/* --- Shade-a-fraction question type (v2.36) --- */
+.shade-answer{margin-top:6px}
+.shade-hint{font-weight:700;color:#33415C;margin-bottom:10px;font-size:15px}
+.shade-grid{display:grid;gap:4px;margin:0 auto}
+.shade-cell{aspect-ratio:1;background:#fff;border:2px solid #c9d3e4;border-radius:6px;cursor:pointer;transition:background .1s,border-color .1s;padding:0}
+.shade-cell:hover{border-color:#6c5ce7}
+.shade-cell.on{background:#6c5ce7;border-color:#5548d9}
+.shade-count{text-align:center;margin-top:10px;color:#5A6474;font-weight:700;font-size:14px}
+/* teacher preview */
+.shade-preview{margin-top:12px}
+.shade-grid-prev{gap:3px}
+.shade-prev-cell{aspect-ratio:1;background:#f0f2f8;border:1.5px solid #c9d3e4;border-radius:4px;display:block}
+.shade-warn{margin-top:10px;background:#fff4e6;border:1px solid #ffd8a8;color:#b34700;font-size:13px;font-weight:600;padding:9px 11px;border-radius:8px;line-height:1.45}
+.shade-ok{margin-top:10px;background:#e6fcf5;border:1px solid #b2f2e5;color:#0c9b73;font-size:13px;font-weight:700;padding:9px 11px;border-radius:8px}

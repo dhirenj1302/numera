@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.35";
+const NUMERA_VERSION = "v2.36";
 const state = {
   files: [],
   sourceImages: [],
@@ -1355,6 +1355,9 @@ function renderReview(){
       <span class="small muted">${state.editingHomeworkId?"Changes update this homework without changing its student link":"You can change anything before publishing"}</span>
     </div>
   `, true);
+  // Initial render of any shade-question previews so the teacher sees the grid
+  // and the divisibility check immediately, not only after editing a field.
+  setTimeout(()=>{ (state.draft.questions||[]).forEach((q,i)=>{ if(q.type==="shade") refreshShadePreview(i); }); },0);
 }
 function questionEditor(q,i){
   return `<details class="question-accordion" data-i="${i}" ${i===0?"open":""}>
@@ -1371,7 +1374,7 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
@@ -1387,18 +1390,22 @@ function questionEditor(q,i){
         </div>
         <div class="field"><label>Grid step</label><input data-k="grid_step" type="number" step="0.25" value="${esc(String(q.grid_step||1))}"></div>
       </div>`:""}
-      ${q.type==="matching"?`<div class="interaction-editor">
-        <strong>Matching setup</strong>
-        <div class="field"><label>Left items <span class="label-note">separate with |</span></label><input data-k="matching_left" value="${esc(parseStringList(q.matching_left).join(" | "))}" placeholder="A | B | C"></div>
-        <div class="field"><label>Right items <span class="label-note">separate with |</span></label><input data-k="matching_right" value="${esc(parseStringList(q.matching_right).join(" | "))}" placeholder="i | ii | iii"></div>
-        <div class="field"><label>Correct pairs <span class="label-note">e.g. A->ii | B->i</span></label><input data-k="matching_pairs" value="${esc(parseStringList(q.matching_pairs).join(" | "))}" placeholder="A->ii | B->i | C->iii"></div>
+      ${q.type==="shade"?`<div class="interaction-editor">
+        <strong>Shade-a-fraction setup</strong>
+        <p class="label-note" style="margin:2px 0 10px">Confirm the grid Numera read from the worksheet, and the fraction to shade. The photo reading can be wrong — please check it matches the printed shape.</p>
+        <div class="row wrap">
+          <div class="field"><label>Rows</label><input data-k="grid_rows" type="number" min="1" max="12" value="${esc(String(q.grid_rows||3))}" oninput="refreshShadePreview(${i})"></div>
+          <div class="field"><label>Columns</label><input data-k="grid_cols" type="number" min="1" max="12" value="${esc(String(q.grid_cols||3))}" oninput="refreshShadePreview(${i})"></div>
+          <div class="field"><label>Fraction to shade</label><input data-k="shade_fraction" value="${esc(String(q.shade_fraction||q.answer||"1/3"))}" placeholder="1/3" oninput="refreshShadePreview(${i})"></div>
+        </div>
+        <div id="shadePreview${i}" class="shade-preview"></div>
       </div>`:""}
 
       <div class="field"><label>Answer choices <span class="label-note">multiple choice only</span></label><input data-k="options" value="${esc((q.options||[]).join(", "))}" placeholder="12, 14, 16, 18"></div>
       ${q.type==="multiple_choice"?`<div class="suggest-options-row"><button type="button" class="btn secondary" onclick="suggestOptions(${i})">✨ Suggest answers</button><span class="suggest-hint muted">Generates the correct answer plus common-mistake distractors</span></div><div class="suggest-result" id="suggestResult${i}"></div>`:""}
-      ${(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) ? `<div class="teacher-check-card">
+      ${(q.requires_teacher_check || ["drawing","point","coordinate","matching","shade"].includes(q.type)) ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
-        <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
+        <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : q.type==="shade" ? "Confirm the grid size and fraction above match the printed shape before publishing — the photo reading of grids can be wrong." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
         ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
         <label class="confirm-check"><input type="checkbox" data-k="teacher_confirmed" ${q.teacher_confirmed?"checked":""}> I have checked this question and answer</label>
       </div>` : ""}
@@ -2400,6 +2407,8 @@ function renderQuestion(){
             ? fractionAnswerMarkup("")
             : q.type==="fraction_visual"
               ? fractionVisualMarkup(q)
+              : q.type==="shade"
+                ? shadeMarkup(q)
               : q.type==="clock"
                 ? clockMarkup(q)
                 : q.type==="drag"
@@ -2453,6 +2462,10 @@ window.selectOption=(v,opts={})=>{
 };
 function getStudentAnswer(q){
   if(q.type==="multiple_choice") return state.selected;
+  if(q.type==="shade"){
+    const sel=(state.shadeSelection instanceof Set)?[...state.shadeSelection]:[];
+    return sel.length?JSON.stringify(sel):null;
+  }
   if(q.type==="drawing") return drawingAnswer();
   if(q.type==="point"){
     const v=state.interactiveAnswers[state.index];
@@ -2574,12 +2587,83 @@ function interactiveIsCorrect(q,given){
   if(q.type==="drag") return Number(given)===Number(q.answer);
   if(q.type==="angle") return Math.abs(Number(given)-Number(q.answer))<=Number(q.angle_tolerance||2);
   if(q.type==="fraction_visual") return normalise(given)===normalise(q.answer);
+  if(q.type==="shade") return shadeIsCorrect(given,q);
   if(q.type==="sequence") return sequenceIsCorrect(given,q.answer);
   return isCorrect(given,q.answer);
 }
+// Shade a fraction of a grid. `given` is a JSON array of shaded cell indices.
+// Correct when the number of shaded cells equals exactly fraction × total cells
+// (and that is a whole number). "Shade one-third" of a 9-cell grid => exactly 3
+// cells. We check the COUNT, not which specific cells, since any 1/3 of the area
+// is a valid answer at this level.
+function shadeConfig(q){
+  const rows=Math.max(1,Number(q.grid_rows)||0);
+  const cols=Math.max(1,Number(q.grid_cols)||0);
+  const total=rows*cols;
+  const m=String(q.shade_fraction||q.answer||"").match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+  const num=m?Number(m[1]):0, den=m?Number(m[2]):0;
+  const target=(den>0)? (total*num)/den : NaN;
+  return {rows,cols,total,num,den,target,exact:Number.isInteger(target)};
+}
+function shadeIsCorrect(given,q){
+  const cfg=shadeConfig(q);
+  if(!cfg.exact || cfg.total<=0) return false;
+  let shaded;
+  try{ shaded=JSON.parse(given); }catch{ return false; }
+  if(!Array.isArray(shaded)) return false;
+  // Count distinct valid cells shaded.
+  const distinct=new Set(shaded.filter(i=>Number.isInteger(i)&&i>=0&&i<cfg.total));
+  return distinct.size===cfg.target;
+}
+// Render the tappable grid for a "shade a fraction" question. Cells toggle
+// shaded/unshaded on tap. The selected cells live in state.shadeSelection.
+function shadeMarkup(q){
+  const cfg=shadeConfig(q);
+  state.shadeSelection=new Set();
+  const cells=Array.from({length:cfg.total},(_,i)=>
+    `<button type="button" class="shade-cell" data-i="${i}" onclick="toggleShadeCell(${i})" aria-label="Cell ${i+1}"></button>`
+  ).join("");
+  const fracLabel=cfg.den?`${cfg.num}/${cfg.den}`:String(q.shade_fraction||"");
+  return `<div class="shade-answer">
+    <div class="shade-hint">Tap squares to shade ${esc(fracLabel)} of the shape.</div>
+    <div class="shade-grid" style="grid-template-columns:repeat(${cfg.cols},1fr);max-width:${Math.min(320,cfg.cols*70)}px">${cells}</div>
+    <div class="shade-count"><span id="shadeCount">0</span> shaded</div>
+  </div>`;
+}
+window.toggleShadeCell=(i)=>{
+  if(!(state.shadeSelection instanceof Set)) state.shadeSelection=new Set();
+  const btn=document.querySelector(`.shade-cell[data-i="${i}"]`);
+  if(state.shadeSelection.has(i)){ state.shadeSelection.delete(i); btn&&btn.classList.remove("on"); }
+  else { state.shadeSelection.add(i); btn&&btn.classList.add("on"); }
+  const c=document.getElementById("shadeCount"); if(c) c.textContent=state.shadeSelection.size;
+};
+// Teacher-side live preview of the shade grid. Renders the grid at the current
+// rows/cols and, crucially, warns if the fraction does not divide the grid
+// evenly — because in that case there is NO correct number of cells to shade and
+// the question is unanswerable. This is the safeguard: the teacher sees and fixes
+// a mis-read grid before publishing.
+window.refreshShadePreview=(i)=>{
+  const box=document.getElementById(`shadePreview${i}`);
+  if(!box) return;
+  const ed=box.closest(".question-accordion")||document;
+  const val=k=>{const el=ed.querySelector(`[data-k="${k}"]`);return el?el.value:"";};
+  const rows=Math.max(1,Math.min(12,Number(val("grid_rows"))||0));
+  const cols=Math.max(1,Math.min(12,Number(val("grid_cols"))||0));
+  const total=rows*cols;
+  const m=String(val("shade_fraction")||"").match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+  const num=m?Number(m[1]):0, den=m?Number(m[2]):0;
+  const target=den>0?(total*num)/den:NaN;
+  const exact=Number.isInteger(target);
+  const cells=Array.from({length:total},()=>`<span class="shade-prev-cell"></span>`).join("");
+  let warn="";
+  if(!m){ warn=`<div class="shade-warn">Enter the fraction as a simple form like "1/3".</div>`; }
+  else if(!exact){ warn=`<div class="shade-warn">⚠ ${num}/${den} does not divide a ${rows}×${cols} (${total}-cell) grid evenly, so there is no exact answer. Adjust the grid or fraction so the child can shade a whole number of cells (e.g. ${num}/${den} needs the total to be a multiple of ${den}).</div>`; }
+  else { warn=`<div class="shade-ok">✓ The child must shade ${target} of ${total} squares to make ${num}/${den}.</div>`; }
+  box.innerHTML=`<div class="shade-grid shade-grid-prev" style="grid-template-columns:repeat(${cols},1fr);max-width:${Math.min(260,cols*40)}px">${cells}</div>${warn}`;
+};
 window.checkAnswer=async()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null) return alert(q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given===null) return alert(q.type==="shade"?"Tap at least one square to shade first.":q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const parsed=JSON.parse(given);
