@@ -81,9 +81,9 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","grid_rows","grid_cols","shade_fraction","parts"],
         properties:{
-          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","coordinate","matching","fraction","fraction_visual","drag","clock","angle","multipart"]},
+          type:{type:"string",enum:["number","time","multiple_choice","drawing","point","coordinate","matching","fraction","fraction_visual","drag","clock","angle","shade","multipart"]},
           prompt:{type:"string"},
           answer:{type:"string"},
           options:{type:"array",items:{type:"string"}},
@@ -114,6 +114,9 @@ const pageSchema = {
           clock_start:{type:"string"},
           angle_start:{type:"number"},
           angle_tolerance:{type:"number"},
+          grid_rows:{type:"integer"},
+          grid_cols:{type:"integer"},
+          shade_fraction:{type:"string"},
           drawing_rubric:{type:"string"},
           parts:{type:"array",maxItems:6,items:{type:"object",additionalProperties:false,required:["label","prompt","answer","answer_unit","type"],properties:{label:{type:"string"},prompt:{type:"string"},answer:{type:"string"},answer_unit:{type:"string"},type:{type:"string",enum:["number","time","multiple_choice"]}}}}
         }
@@ -333,9 +336,13 @@ For every complete visible question:
 - clock_start: ""
 - angle_start: 0
 - angle_tolerance: 0
+- grid_rows: 0
+- grid_cols: 0
+- shade_fraction: ""
 - drawing_rubric: ""
 - parts: []
 Only populate these fields with meaningful values when the selected question type uses them.
+19a. SHADE-A-FRACTION. If a question shows a grid or shape divided into equal squares/parts and asks the pupil to shade/colour a fraction of it (e.g. "Shade one-third", "Colour 1/4"), use type=shade. Set grid_rows and grid_cols to the grid you can see (count the rows and columns of cells), and shade_fraction to the target as "n/d" (e.g. "1/3"). Also set answer to the same "n/d" and requires_teacher_check=true, because the grid reading must be confirmed by the teacher. If you cannot clearly count the grid, still choose type=shade with your best row/column guess and note the uncertainty in warning.
 20. If any item is too unclear, omit it and explain briefly in warning.
 11. Set answer_unit to the unit requested by the printed answer line, such as ml, cm, minutes, children or £; use an empty string if unitless. Do not include the unit inside a numeric answer. 12. Return questions in exact top-to-bottom page order. Do not include pupil names.`;
 
