@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.36";
+const NUMERA_VERSION = "v2.38";
 const state = {
   files: [],
   sourceImages: [],
@@ -70,6 +70,10 @@ function speak(text, force=false){
     .replace(/_{2,}/g, " ")           // "____" blank -> pause
     .replace(/\b_\b/g, " ")           // a lone underscore
     .replace(/[–—]{2,}/g, " ")        // long dash runs used as blanks
+    .replace(/\u2212/g, " minus ")    // true minus sign U+2212 -> spoken "minus"
+    .replace(/(\d)\s*[-−]\s*(\d)/g, "$1 minus $2") // a hyphen/minus between numbers -> "minus"
+    .replace(/[×✕✖]/g, " times ")     // multiplication sign -> "times"
+    .replace(/÷/g, " divided by ")    // division sign
     .replace(/\s*,\s*,\s*/g, ", ")    // collapse a comma left orphaned by a removed blank
     .replace(/,\s*([,.?!])/g, "$1")   // remove a comma stranded before other punctuation
     .replace(/\s{2,}/g, " ")
@@ -2889,6 +2893,7 @@ async function finishHomework(){
     },
     summary:{original,mastery,scoreTotal,strengths,needs,teacherReviewCount,insight}
   };
+  state.pendingSummaryAttempts=safeAttempts; // for gem computation on the complete screen
 
   localStorage.setItem("numera:pendingSubmission",JSON.stringify(state.pendingSubmission));
   renderSavingResults();
@@ -2994,14 +2999,50 @@ function learningStoryMarkup(insight,original,mastery,total){
   return `<div class="card learning-story"><h3>Your learning story</h3>${lines.map(l=>`<p>${l}</p>`).join("")}</div>`;
 }
 
+// --- Gems: a light, non-addictive motivation layer (v2.38) ---
+// Points reward EFFORT and PROGRESS, not speed or streaks — so it motivates
+// without the pressure mechanics schools dislike, and it's honest (derived only
+// from real per-question outcomes). Persisted per student so a running total
+// accumulates across homeworks; this is the foundation the finance-literacy idea
+// can later build on (turning gems into a save/spend learning tool). Stored
+// locally for now (single-device pilot); can move server-side without changing
+// the rule.
+function computeGemsEarned(attempts){
+  let g=0;
+  for(const a of (attempts||[])){
+    if(a.requires_teacher_review) continue;
+    if(a.first_correct && !a.hint_used) g+=10;        // independent success
+    else if(a.first_correct || a.mastered) g+=5;       // got there (persistence)
+    if(a.hint_used && (a.first_correct||a.mastered)) g+=2; // used help then succeeded
+  }
+  if(g>0) g+=5; // small completion bonus for finishing
+  return g;
+}
+function gemsTotalKey(){ return `numera:gems:${state.studentUsername||"guest"}`; }
+function getGemsTotal(){ return Number(localStorage.getItem(gemsTotalKey())||0); }
+function addGems(n){
+  const total=getGemsTotal()+Math.max(0,Number(n)||0);
+  try{ localStorage.setItem(gemsTotalKey(), String(total)); }catch{}
+  return total;
+}
+
 function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
+  // Award gems for this homework (once), from the real attempts, and read the
+  // running total so the child sees their collection grow.
+  const gemsEarned = insight ? computeGemsEarned(state.pendingSummaryAttempts||[]) : 0;
+  const gemsTotal = gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal();
   app.innerHTML=shell(`
     <div class="mission">
       <div class="confetti">🎉 ⭐ 🎉</div><h1>Great work, ${esc(state.studentName)}!</h1>
       <p>You improved your understanding by ${Math.max(0,mp-op)} percentage points.</p>
       <span class="saved-confirmation">✓ Results saved to the teacher dashboard</span>
     </div>
+    ${gemsEarned>0?`<div class="card gems-card">
+      <div class="gems-earned"><span class="gem">💎</span> +${gemsEarned} gems earned!</div>
+      <div class="gems-total">You now have <strong>${gemsTotal}</strong> gems in your collection</div>
+      <div class="gems-note">Earn gems by having a go, sticking with tricky questions, and finishing your work.</div>
+    </div>`:""}
     <div class="score-grid">
       <div class="score"><span>Original score</span><strong>${op}%</strong><span>${original}/${total}</span></div>
       <div class="score mastery"><span>Mastery score</span><strong>${mp}%</strong><span>${mastery}/${total}</span></div>
