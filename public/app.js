@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.38";
+const NUMERA_VERSION = "v2.39";
 const state = {
   files: [],
   sourceImages: [],
@@ -673,7 +673,9 @@ function studentReportMarkup(data){
   }
 
   const strong=r.strongest_topics&&r.strongest_topics.length?`<div class="report-row good"><span class="report-k">Strongest so far</span><span>${r.strongest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
-  const weak=r.weakest_topics&&r.weakest_topics.length?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
+  const weak=r.weakest_topics&&r.weakest_topics.length
+    ?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`
+    :`<div class="report-row good"><span class="report-k">Worth practising</span><span>Nothing stands out yet — full marks so far. 🎉</span></div>`;
 
   // --- Real per-child misconceptions (only if tagging has populated them) ---
   let observedBlock="";
