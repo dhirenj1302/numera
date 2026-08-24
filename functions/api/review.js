@@ -149,6 +149,19 @@ async function studentHistory(context, db, setter, studentUsername, url) {
     .map(t => ({ topic: t.topic, attempts: t.attempts, avg_mastery: Math.round(t.mastery_sum / t.attempts) }))
     .sort((a, b) => a.avg_mastery - b.avg_mastery);
 
+  // "Worth practising" must reflect a REAL weakness — a topic the student did not
+  // fully master (made errors or needed hints). A topic at 100% is never worth
+  // practising, even if it's the only topic so far. If nothing is below 100%, the
+  // list is empty and the UI shows an encouraging "nothing stands out" state.
+  const weakest = topics.filter(t => t.avg_mastery < 100).slice(0, 3);
+  // "Strongest" should reflect genuine strength — 100%, or at least strong. Only
+  // surface it when there's real data, and never surface the same topic as both
+  // strongest and weakest.
+  const weakestSet = new Set(weakest.map(t => t.topic));
+  const strongest = [...topics].reverse()
+    .filter(t => t.avg_mastery >= 80 && !weakestSet.has(t.topic))
+    .slice(0, 2);
+
   const ev = eventAgg[0] || {};
   const report = {
     // Everything here is derived from real stored data. Fields that depend on
@@ -158,8 +171,8 @@ async function studentHistory(context, db, setter, studentUsername, url) {
     has_misconception_tagging: Number(ev.tagged_events || 0) > 0,
     hint_reliance_pct: ev.total_events ? Math.round((100 * (ev.hint_events || 0)) / ev.total_events) : null,
     recovered_after_retry: Number(ev.recovered_events || 0),
-    weakest_topics: topics.slice(0, 3),
-    strongest_topics: [...topics].reverse().slice(0, 2),
+    weakest_topics: weakest,
+    strongest_topics: strongest,
     weakest_concepts: concepts.slice(0, 4),
     observed_misconceptions: misconceptions
   };
