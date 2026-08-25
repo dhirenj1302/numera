@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.45";
+const NUMERA_VERSION = "v2.44";
 const state = {
   files: [],
   sourceImages: [],
@@ -771,20 +771,6 @@ async function renderReviewHub(){
       <div id="reviewStudents" class="review-panel">${data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">${st.completed} completed · ${st.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View</a></article>`).join("")||`<div class="empty card">No students yet.</div>`}</div>
       <div id="reviewHomeworks" class="review-panel hidden">${data.homeworks.map(h=>`<article class="history-card"><div><h3>${esc(h.title)}</h3><p class="muted">${h.completed}/${data.students.length} completed · ${h.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(h.id)}">Results</a></article>`).join("")||`<div class="empty card">No homework yet.</div>`}</div>
       <div id="reviewInsights" class="review-panel hidden">
-        <details class="insight-how">
-          <summary>How these are worked out</summary>
-          <div class="insight-how-body">
-            <p><strong>Understanding score</strong> reflects how much help each answer needed, not just whether it was eventually right:</p>
-            <ul>
-              <li>Right first time, no hint → full credit (100%)</li>
-              <li>Right after 1 hint → 80% · 2 hints → 60% · 3 hints → 40% · 4 hints → 20%</li>
-              <li>Not reached → 0%</li>
-            </ul>
-            <p>So two pupils who both finished at 100% can score differently here — the one who needed fewer hints understands it more securely.</p>
-            <p><strong>Most improved</strong> is the jump from first-attempt marks to final mastery — pupils who work back to the right answer after feedback.</p>
-            <p class="insight-how-gems">💎 The <strong>gems</strong> pupils collect use this same logic — fewer hints earn more gems — so a pupil's gem count and their understanding here tell a consistent story. (Gems are a running total that also rewards doing more work, so they aren't a straight copy of this rate.)</p>
-          </div>
-        </details>
         <div class="insight-block">
           <h3 class="insight-h">Working most independently</h3>
           <p class="small muted">Understanding score — how much pupils work things out with the least help (not just final marks).</p>
