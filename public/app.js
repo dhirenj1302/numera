@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.43";
+const NUMERA_VERSION = "v2.44";
 const state = {
   files: [],
   sourceImages: [],
@@ -766,16 +766,28 @@ async function renderReviewHub(){
   try{
     const data=await api(`/api/review?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
     app.innerHTML=shell(`
-      <section class="mobile-page-head"><span class="step-chip">Teacher review</span><h1>Class overview</h1><p class="muted">View completion by student, by homework and as a class ranking.</p></section>
-      <div class="review-tabs"><button class="btn secondary" onclick="showReviewPanel('students')">By student</button><button class="btn secondary" onclick="showReviewPanel('homeworks')">By homework</button><button class="btn secondary" onclick="showReviewPanel('ranking')">Ranking</button></div>
+      <section class="mobile-page-head"><span class="step-chip">Teacher review</span><h1>Class overview</h1><p class="muted">View completion by student, by homework, and class insights on growth and independence.</p></section>
+      <div class="review-tabs"><button class="btn secondary" onclick="showReviewPanel('students')">By student</button><button class="btn secondary" onclick="showReviewPanel('homeworks')">By homework</button><button class="btn secondary" onclick="showReviewPanel('insights')">Class insights</button></div>
       <div id="reviewStudents" class="review-panel">${data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">${st.completed} completed · ${st.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View</a></article>`).join("")||`<div class="empty card">No students yet.</div>`}</div>
       <div id="reviewHomeworks" class="review-panel hidden">${data.homeworks.map(h=>`<article class="history-card"><div><h3>${esc(h.title)}</h3><p class="muted">${h.completed}/${data.students.length} completed · ${h.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(h.id)}">Results</a></article>`).join("")||`<div class="empty card">No homework yet.</div>`}</div>
-      <div id="reviewRanking" class="review-panel hidden"><div class="ranking-list">${data.ranking.map((st,i)=>`<div class="ranking-row"><span>${i+1}</span><strong>${esc(st.display_name)}</strong><b>${st.average_mastery}%</b></div>`).join("")||`<div class="empty card">No results to rank.</div>`}</div><p class="small muted">Ranking is shown only as an optional class view. Intervention and improvement should remain the main teaching signals.</p></div>
+      <div id="reviewInsights" class="review-panel hidden">
+        <div class="insight-block">
+          <h3 class="insight-h">Working most independently</h3>
+          <p class="small muted">Understanding score — how much pupils work things out with the least help (not just final marks).</p>
+          <div class="ranking-list">${(data.most_independent||[]).map(st=>`<div class="ranking-row"><strong>${esc(st.display_name)}</strong><b>${st.understanding}%</b></div>`).join("")||`<div class="empty card">No results yet.</div>`}</div>
+        </div>
+        <div class="insight-block" style="margin-top:18px">
+          <h3 class="insight-h">Most improved after feedback</h3>
+          <p class="small muted">Biggest jump from first attempt to mastery — pupils who work back to the right answer.</p>
+          <div class="ranking-list">${(data.most_improved||[]).map(st=>`<div class="ranking-row"><strong>${esc(st.display_name)}</strong><b>+${st.growth}%</b></div>`).join("")||`<div class="empty card">No improvement data yet — this fills in as pupils recover after hints.</div>`}</div>
+        </div>
+        <p class="small muted" style="margin-top:14px">These views are here to help you spot who's flying and who needs a hand — not to rank ability. A pupil who climbs from 40% to 90% is a success story, not a low scorer.</p>
+      </div>
     `,true);
   }catch(err){alert(err.message);}
 }
 window.showReviewPanel=name=>{
-  ["Students","Homeworks","Ranking"].forEach(n=>$("#review"+n)?.classList.toggle("hidden",n.toLowerCase()!==name));
+  ["Students","Homeworks","Insights"].forEach(n=>$("#review"+n)?.classList.toggle("hidden",n.toLowerCase()!==name));
 };
 
 function renderTeacher(){

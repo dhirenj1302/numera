@@ -659,3 +659,8 @@
 /* --- Gem total banner on the mission screen (v2.43) --- */
 .gem-banner{background:linear-gradient(135deg,#eef4ff,#e6fcf5);border:1.5px solid #cfe3ff;border-radius:14px;padding:12px 16px;margin:0 0 14px;font-size:16px;color:#33415c;text-align:center}
 .gem-banner strong{color:#6c5ce7;font-size:20px}
+
+/* --- Class insights (growth/independence) (v2.44) --- */
+.insight-block .insight-h{margin:0 0 2px;font-size:17px;color:#1f2a44}
+.insight-block .ranking-row{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:#fff;border:1px solid #eef1f7;border-radius:10px;margin-top:7px}
+.insight-block .ranking-row b{color:#6c5ce7}
