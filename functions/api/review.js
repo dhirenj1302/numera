@@ -71,7 +71,7 @@ async function studentHistory(context, db, setter, studentUsername, url) {
   const { results = [] } = await db
     .prepare(
       `SELECT sub.homework_id,h.title homework_title,h.topic,
-              sub.original_score,sub.mastery_score,sub.total_questions,sub.completed_at
+              sub.original_score,sub.mastery_score,sub.total_questions,sub.attempts_json,sub.completed_at
        FROM submissions sub
        JOIN homeworks h ON h.id=sub.homework_id
        WHERE sub.student_username=?
@@ -138,29 +138,76 @@ async function studentHistory(context, db, setter, studentUsername, url) {
 
   // Topics the child has actually met, weakest-first, from homework scores.
   // Used to key age-typical watch-points to real content (not invented topics).
+  // We compute an UNDERSTANDING score per topic that reflects HOW MUCH HELP each
+  // question needed — not just whether it was eventually right. The tiered hint
+  // ladder exists to capture this: right-first-time-unaided is full understanding;
+  // each hint level needed lowers the score; never getting there is zero. This is
+  // the granularity a binary "correct/incorrect" throws away.
+  //
+  // Per-question understanding credit (highest hint level reached, 0–4):
+  //   solved with 0 hints -> 1.00   (independent mastery)
+  //   solved at hint 1    -> 0.80
+  //   solved at hint 2    -> 0.60
+  //   solved at hint 3    -> 0.40
+  //   solved at hint 4    -> 0.20   (needed walking all the way there)
+  //   never solved        -> 0.00
+  const HINT_CREDIT = [1.0, 0.8, 0.6, 0.4, 0.2];
+  function questionUnderstanding(a){
+    const solved = a.first_correct===true || a.first_correct===1 || a.mastered===true || a.mastered===1;
+    if(!solved) return 0;
+    const lvl = Math.max(0, Math.min(4, Number(a.highest_hint_level)||0));
+    // If solved but hint_used is false, treat as level 0 regardless.
+    const usedHint = a.hint_used===true || a.hint_used===1;
+    return usedHint ? HINT_CREDIT[lvl] : 1.0;
+  }
+
   const topicRollup = {};
   for (const r of results) {
     const t = (r.topic || "General maths").trim();
-    if (!topicRollup[t]) topicRollup[t] = { topic: t, attempts: 0, mastery_sum: 0 };
+    if (!topicRollup[t]) topicRollup[t] = { topic: t, attempts: 0, mastery_sum: 0, original_sum: 0, understanding_sum: 0, understanding_n: 0 };
     topicRollup[t].attempts += 1;
     topicRollup[t].mastery_sum += pct(r.mastery_score, r.total_questions);
+    topicRollup[t].original_sum += pct(r.original_score, r.total_questions);
+    // Parse per-question attempts to get hint-weighted understanding.
+    let atts=[];
+    try{ atts=JSON.parse(r.attempts_json||"[]"); }catch{ atts=[]; }
+    for(const a of atts){
+      if(a && a.requires_teacher_review) continue; // not auto-scored
+      topicRollup[t].understanding_sum += questionUnderstanding(a);
+      topicRollup[t].understanding_n += 1;
+    }
   }
   const topics = Object.values(topicRollup)
-    .map(t => ({ topic: t.topic, attempts: t.attempts, avg_mastery: Math.round(t.mastery_sum / t.attempts) }))
-    .sort((a, b) => a.avg_mastery - b.avg_mastery);
+    .map(t => ({
+      topic: t.topic,
+      attempts: t.attempts,
+      avg_mastery: Math.round(t.mastery_sum / t.attempts),
+      avg_original: Math.round(t.original_sum / t.attempts),
+      // Understanding as a 0–100 score; falls back to first-attempt score if no
+      // per-question hint data is available (older submissions).
+      understanding: t.understanding_n
+        ? Math.round((t.understanding_sum / t.understanding_n) * 100)
+        : Math.round(t.original_sum / t.attempts)
+    }))
+    // Sort by understanding (ascending) — the truest difficulty signal.
+    .sort((a, b) => a.understanding - b.understanding);
 
-  // "Worth practising" must reflect a REAL weakness — a topic the student did not
-  // fully master (made errors or needed hints). A topic at 100% is never worth
-  // practising, even if it's the only topic so far. If nothing is below 100%, the
-  // list is empty and the UI shows an encouraging "nothing stands out" state.
-  const weakest = topics.filter(t => t.avg_mastery < 100).slice(0, 3);
-  // "Strongest" should reflect genuine strength — 100%, or at least strong. Only
-  // surface it when there's real data, and never surface the same topic as both
-  // strongest and weakest.
+  // "Worth practising" reflects genuine difficulty: understanding below full.
+  // A child who reached the answer only after several hints scores lower here
+  // than one who needed a single nudge — exactly the granularity the hint ladder
+  // was built to capture. Threshold at <95 to avoid flagging trivial rounding.
+  const weakest = topics.filter(t => t.understanding < 95).slice(0, 3);
+  // "Strongest" = high understanding (mostly unaided), never also flagged weak.
   const weakestSet = new Set(weakest.map(t => t.topic));
   const strongest = [...topics].reverse()
-    .filter(t => t.avg_mastery >= 80 && !weakestSet.has(t.topic))
+    .filter(t => t.understanding >= 95 && !weakestSet.has(t.topic))
     .slice(0, 2);
+  // Fallback so a struggling-but-improving student still sees a relative strength.
+  if (!strongest.length) {
+    const best = [...topics].sort((a,b)=>b.understanding-a.understanding)
+      .filter(t => !weakestSet.has(t.topic)).slice(0,1);
+    strongest.push(...best);
+  }
 
   const ev = eventAgg[0] || {};
   const report = {
