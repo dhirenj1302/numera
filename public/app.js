@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.39";
+const NUMERA_VERSION = "v2.43";
 const state = {
   files: [],
   sourceImages: [],
@@ -644,17 +644,59 @@ function studentReportMarkup(data){
     return `<div class="report-card"><div class="report-head"><h2>Performance report</h2></div><div class="report-body"><p class="muted">Once ${esc(data.student.display_name)} completes some homework, a short performance report will appear here — highlighting strengths, areas to work on, and common things to look out for at this age.</p></div></div>`;
   }
 
-  // --- Narrative built ONLY from real data ---
+  // --- Narrative built ONLY from real data, written to read like a note an
+  //     engaged teacher would send home: what they've worked on, where they've
+  //     improved, and what's still taking effort — specific, warm, honest. ---
   const name=esc((data.student.display_name||"").split(" ")[0]||"This pupil");
   const bits=[];
   const am=data.summary.average_mastery, ao=data.summary.average_original;
-  bits.push(`${name} has completed <strong>${data.summary.homework_count}</strong> homework${data.summary.homework_count===1?"":"s"}, averaging <strong>${am}%</strong> once given the chance to try again after feedback (${ao}% on first attempt).`);
-  if(am-ao>=8){bits.push(`The jump from ${ao}% to ${am}% is a good sign: ${name} tends to <strong>correct mistakes when given feedback and another go</strong>, which is exactly the behaviour Numera rewards.`);}
-  if(r.hint_reliance_pct!==null){
-    if(r.hint_reliance_pct>=50){bits.push(`Hints are used on around <strong>${r.hint_reliance_pct}%</strong> of questions — leaning on support quite often, which points to working near the edge of current understanding.`);}
-    else if(r.hint_reliance_pct>0){bits.push(`Hints are used on around <strong>${r.hint_reliance_pct}%</strong> of questions — a healthy amount of independent working.`);}
+  const hwCount=data.summary.homework_count;
+
+  // Opening: what they've been doing, in plain, warm language.
+  const topicsWorkedOn=[...new Set([...(r.strongest_topics||[]),...(r.weakest_topics||[])].map(t=>t.topic))].slice(0,3);
+  if(topicsWorkedOn.length){
+    const list = topicsWorkedOn.length===1 ? `<strong>${esc(topicsWorkedOn[0])}</strong>`
+      : topicsWorkedOn.slice(0,-1).map(t=>`<strong>${esc(t)}</strong>`).join(", ")+` and <strong>${esc(topicsWorkedOn[topicsWorkedOn.length-1])}</strong>`;
+    bits.push(`Over ${hwCount} piece${hwCount===1?"":"s"} of homework, ${name} has been working on ${list}.`);
+  } else {
+    bits.push(`${name} has completed ${hwCount} piece${hwCount===1?"":"s"} of homework so far.`);
   }
-  if(r.recovered_after_retry>0){bits.push(`On <strong>${r.recovered_after_retry}</strong> occasion${r.recovered_after_retry===1?"":"s"}, ${name} got a question wrong first but reached mastery after retrying — resilience worth praising.`);}
+
+  // Improvement: concrete, and framed as growth a parent would be pleased to read.
+  if(am-ao>=8){
+    bits.push(`There's clear growth in how ${name} works: starting at ${ao}% on first tries and climbing to ${am}% after thinking again with a hint. ${name} <strong>doesn't give up on a tricky question</strong> — they work back to the right answer, which is exactly the habit we want to see.`);
+  } else if(ao>=90){
+    bits.push(`${name} is getting a lot right first time (${ao}% on first attempt), which shows the work is landing at about the right level.`);
+  }
+
+  // Strength: name the actual strongest topic and what "strong" means here.
+  if(r.strongest_topics && r.strongest_topics.length){
+    const s=r.strongest_topics[0];
+    const uu=typeof s.understanding==="number"?s.understanding:null;
+    if(uu!==null && uu>=90){
+      bits.push(`${name} is now <strong>confident with ${esc(s.topic)}</strong>, mostly working these out without help.`);
+    } else if(uu!==null){
+      bits.push(`${name}'s strongest area right now is <strong>${esc(s.topic)}</strong>.`);
+    }
+  }
+
+  // What's still hard: specific, honest, and constructive — the bit a parent most
+  // wants. Uses the understanding score so it distinguishes "a nudge" from "a lot
+  // of help".
+  if(r.weakest_topics && r.weakest_topics.length){
+    const w=r.weakest_topics[0];
+    const uu=typeof w.understanding==="number"?w.understanding:null;
+    if(uu!==null && uu<50){
+      bits.push(`The area still taking real effort is <strong>${esc(w.topic)}</strong> — ${name} is reaching the answers but relying on quite a lot of support to get there, so this is the one to keep practising.`);
+    } else if(uu!==null && uu<95){
+      bits.push(`${name} is <strong>close on ${esc(w.topic)}</strong> — getting there with a hint or two rather than fully independently yet. A little more practice should tip it into confident.`);
+    }
+  }
+
+  // Hint habit, only when it adds something and wasn't already covered.
+  if(r.hint_reliance_pct!==null && r.hint_reliance_pct>=50 && !(am-ao>=8)){
+    bits.push(`Hints are being used on around ${r.hint_reliance_pct}% of questions, which suggests ${name} is working right at the edge of what's comfortable — normal for new material, worth keeping an eye on.`);
+  }
 
   // Brief, SPECIFIC "where the mistakes are" callout — one or two areas, as
   // specific as the real data honestly supports. If misconception tagging is
@@ -672,10 +714,19 @@ function studentReportMarkup(data){
     }
   }
 
-  const strong=r.strongest_topics&&r.strongest_topics.length?`<div class="report-row good"><span class="report-k">Strongest so far</span><span>${r.strongest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`:"";
+  const understandingLabel=(u)=>{
+    const n=typeof u==="number"?u:null;
+    if(n===null) return "";
+    if(n>=95) return "confident";
+    if(n>=75) return "mostly there, light help";
+    if(n>=50) return "getting there, needed hints";
+    if(n>=25) return "needed lots of help";
+    return "not yet";
+  };
+  const strong=r.strongest_topics&&r.strongest_topics.length?`<div class="report-row good"><span class="report-k">Strongest so far</span><span>${r.strongest_topics.map(t=>`${esc(t.topic)}${typeof t.understanding==="number"?` (${t.understanding}% understanding)`:""}`).join(", ")}</span></div>`:"";
   const weak=r.weakest_topics&&r.weakest_topics.length
-    ?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)} (${t.avg_mastery}%)`).join(", ")}</span></div>`
-    :`<div class="report-row good"><span class="report-k">Worth practising</span><span>Nothing stands out yet — full marks so far. 🎉</span></div>`;
+    ?`<div class="report-row watch"><span class="report-k">Worth practising</span><span>${r.weakest_topics.map(t=>`${esc(t.topic)}${typeof t.understanding==="number"?` — ${t.understanding}% understanding (${understandingLabel(t.understanding)})`:""}`).join(", ")}</span></div>`
+    :`<div class="report-row good"><span class="report-k">Worth practising</span><span>Nothing stands out yet — strong, mostly-unaided work so far. 🎉</span></div>`;
 
   // --- Real per-child misconceptions (only if tagging has populated them) ---
   let observedBlock="";
@@ -1356,6 +1407,8 @@ function renderReview(){
     <div class="review-instruction"><span>AI draft</span><strong>Tap a question to edit it</strong></div>
     <div id="questionEditors" class="question-editor-list">${qs}</div>
     <button class="btn secondary block" onclick="addQuestion()">＋ Add another question</button>
+    <button class="btn secondary block" style="margin-top:10px" onclick="document.getElementById('appendImageInput').click()">📷 Upload another image</button>
+    <input type="file" id="appendImageInput" accept="image/*" style="display:none" onchange="appendImageQuestions(this)">
     <div class="mobile-sticky-action review-publish">
       <button class="btn green block" onclick="publishHomework()">${state.editingHomeworkId?"Save changes":"Publish homework"}</button>
       <span class="small muted">${state.editingHomeworkId?"Changes update this homework without changing its student link":"You can change anything before publishing"}</span>
@@ -1641,6 +1694,45 @@ window.addQuestion = () => {
   renderReview();
 };
 
+// Upload another photo and APPEND every question the AI reads from it to the
+// current homework — so a teacher can build one homework from several photos
+// (camera or gallery). Existing reviewed questions are preserved.
+window.appendImageQuestions = async (input) => {
+  const file=input.files&&input.files[0];
+  input.value=""; // allow re-selecting the same file later
+  if(!file) return;
+  syncEditors(); // keep everything the teacher has already edited
+  const addBtn=document.getElementById("appendImageInput");
+  // Lightweight busy state on the action button.
+  const btn=document.querySelector('[onclick*="appendImageInput"]');
+  const label=btn?btn.textContent:"";
+  if(btn){ btn.disabled=true; btn.textContent="Reading the image with AI…"; }
+  try{
+    const shrunk=await imageToJpegDataURL(file); // reads + downscales/normalises like the main upload
+    const result=await api("/api/extract",{method:"POST",body:JSON.stringify({images:[shrunk], setter_username:state.setterSession?.username||"", token:state.setterSession?.token||""}),timeoutMs:95000});
+    const found=(result.questions||[]);
+    if(!found.length){ throw new Error("No questions could be read from that image. Try a sharper, closer photo of one page."); }
+    for(const q of found){
+      const nq={...q, visual_data_url:q.visual_data_url||"", source_label:"Uploaded image", page_index:0, page_number:1};
+      // Snapshot AI originals so the correction-feedback loop still works on these.
+      nq._ai_original={ answer:String(nq.answer??""), prompt:String(nq.prompt??""), type:String(nq.type??"") };
+      state.draft.questions.push(nq);
+    }
+    state.draft.questions=state.draft.questions.map(normaliseMultipartQuestion);
+    saveDraft();
+    renderReview();
+    // Scroll to and open the first newly-added question.
+    setTimeout(()=>{
+      const firstNewIndex=state.draft.questions.length-found.length;
+      const el=document.querySelector(`[data-i="${firstNewIndex}"]`);
+      if(el){ el.setAttribute("open",""); el.scrollIntoView({behavior:"smooth",block:"center"}); }
+    },60);
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+    alert(e.message||"That image could not be read. Please try again.");
+  }
+};
+
 // Detect what the teacher actually changed from the AI's output, and record it
 // (best-effort). This is the correction-feedback loop's capture step. Only counts
 // REAL differences — nothing inflated.
@@ -1889,10 +1981,12 @@ window.joinHomework=async()=>{
 
 function renderMission(){
   const count=state.homework.questions.length;
+  const gems=getGemsTotal();
   app.innerHTML=shell(`
     <div class="mission">
       <div class="mascot">🚀</div>
       <h1>Hello ${esc(state.studentName)}!</h1>
+      ${gems>0?`<div class="gem-banner">💎 You have <strong>${gems}</strong> gems in your collection</div>`:""}
       <div class="card">
         <div class="pill">TODAY’S MISSION</div>
         <h2>${esc(state.homework.topic)}</h2>
@@ -3010,14 +3104,30 @@ function learningStoryMarkup(insight,original,mastery,total){
 // locally for now (single-device pilot); can move server-side without changing
 // the rule.
 function computeGemsEarned(attempts){
+  // Gems now track UNDERSTANDING, not just effort: the fewer hints a child needed,
+  // the more gems they earn — the same hint-depth signal as the report's
+  // understanding score. Persistence still earns something (we never punish trying),
+  // but independent success is worth the most.
+  //   solved unaided        -> 10
+  //   solved at hint 1      -> 8
+  //   solved at hint 2      -> 6
+  //   solved at hint 3      -> 4
+  //   solved at hint 4      -> 3  (still rewarded for getting there)
+  //   attempted, not solved -> 1  (rewarded for trying)
+  const BY_HINT=[10,8,6,4,3];
   let g=0;
   for(const a of (attempts||[])){
     if(a.requires_teacher_review) continue;
-    if(a.first_correct && !a.hint_used) g+=10;        // independent success
-    else if(a.first_correct || a.mastered) g+=5;       // got there (persistence)
-    if(a.hint_used && (a.first_correct||a.mastered)) g+=2; // used help then succeeded
+    const solved=a.first_correct===true || a.mastered===true;
+    if(solved){
+      const usedHint=a.hint_used===true;
+      const lvl=Math.max(0,Math.min(4,Number(a.highest_hint_level)||0));
+      g += usedHint ? BY_HINT[lvl] : 10;
+    } else {
+      g += 1; // tried but didn't get there — a small nod for effort
+    }
   }
-  if(g>0) g+=5; // small completion bonus for finishing
+  if(g>0) g+=5; // completion bonus for finishing
   return g;
 }
 function gemsTotalKey(){ return `numera:gems:${state.studentUsername||"guest"}`; }
