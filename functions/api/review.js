@@ -241,7 +241,67 @@ async function studentHistory(context, db, setter, studentUsername, url) {
 }
 
 async function classOverview(db, setter) {
-  const { results: students = [] } = await db
+  // Pull per-submission detail (not just averaged mastery) so we can compute an
+  // UNDERSTANDING score (hint-depth weighted) and GROWTH per student, rather than
+  // ranking on the flat mastery number that can't tell independent work from
+  // heavily-hinted work.
+  const { results: subRows = [] } = await db
+    .prepare(
+      `SELECT s.username,s.display_name,
+              sub.original_score,sub.mastery_score,sub.total_questions,sub.attempts_json
+       FROM setter_students ss
+       JOIN students s ON s.username=ss.student_username
+       LEFT JOIN submissions sub ON sub.student_username=s.username
+       WHERE ss.setter_username=?`
+    )
+    .bind(setter.username)
+    .all();
+
+  // Hint-depth understanding credit (same model as the individual report).
+  const HINT_CREDIT = [1.0, 0.8, 0.6, 0.4, 0.2];
+  const qUnderstanding = (a) => {
+    const solved = a && (a.first_correct===true||a.first_correct===1||a.mastered===true||a.mastered===1);
+    if(!solved) return 0;
+    const usedHint = a.hint_used===true||a.hint_used===1;
+    if(!usedHint) return 1.0;
+    return HINT_CREDIT[Math.max(0,Math.min(4,Number(a.highest_hint_level)||0))];
+  };
+
+  // Aggregate per student.
+  const byStudent = {};
+  for(const row of subRows){
+    const u=row.username;
+    if(!byStudent[u]) byStudent[u]={username:u,display_name:row.display_name,completed:0,mastery_sum:0,original_sum:0,u_sum:0,u_n:0};
+    const s=byStudent[u];
+    if(row.total_questions){ // a real submission (LEFT JOIN can yield a null row)
+      s.completed+=1;
+      s.mastery_sum+=pct(row.mastery_score,row.total_questions);
+      s.original_sum+=pct(row.original_score,row.total_questions);
+      let atts=[]; try{ atts=JSON.parse(row.attempts_json||"[]"); }catch{ atts=[]; }
+      for(const a of atts){ if(a&&a.requires_teacher_review) continue; s.u_sum+=qUnderstanding(a); s.u_n+=1; }
+    }
+  }
+
+  const students = Object.values(byStudent).map(s=>{
+    const average_mastery = s.completed?Math.round(s.mastery_sum/s.completed):0;
+    const average_original = s.completed?Math.round(s.original_sum/s.completed):0;
+    const understanding = s.u_n?Math.round((s.u_sum/s.u_n)*100):average_original;
+    const growth = Math.max(0, average_mastery - average_original); // improvement after feedback
+    return { username:s.username, display_name:s.display_name, completed:s.completed,
+             average_mastery, average_original, understanding, growth };
+  });
+
+  // Class view, reframed around GROWTH and INDEPENDENCE rather than a bare ability
+  // rank. Two orderings the teacher can use as triage — neither is a "who's worst"
+  // leaderboard:
+  //   most_independent: highest understanding (works things out with least help)
+  //   most_improved:    biggest jump from first attempt to mastery
+  const most_independent = [...students].filter(s=>s.completed>0)
+    .sort((a,b)=> b.understanding - a.understanding || b.average_mastery - a.average_mastery);
+  const most_improved = [...students].filter(s=>s.completed>0 && s.growth>0)
+    .sort((a,b)=> b.growth - a.growth);
+
+  const { results: students_list = [] } = await db
     .prepare(
       `SELECT s.username,s.display_name,COUNT(sub.id) completed,
               COALESCE(ROUND(AVG(100.0*sub.mastery_score/sub.total_questions)),0) average_mastery
@@ -268,8 +328,11 @@ async function classOverview(db, setter) {
     .all();
 
   return json({
-    students,
+    students: students_list,
     homeworks,
-    ranking: [...students].sort((a, b) => b.average_mastery - a.average_mastery)
+    // Reframed class view: independence (understanding) and improvement (growth),
+    // not a bare ability ranking.
+    most_independent,
+    most_improved
   });
 }
