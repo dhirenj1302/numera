@@ -1,5 +1,5 @@
 // functions/api/_lib.js
-// Shared helpers for Numera's Cloudflare Pages Functions.
+// Shared helpers for Verve Maths's Cloudflare Pages Functions.
 // Cloudflare Pages does not route requests to files whose name starts with
 // an underscore, so this module is import-only and never served as an endpoint.
 
