@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.44";
+const NUMERA_VERSION = "v2.46";
 const state = {
   files: [],
   sourceImages: [],
@@ -148,7 +148,7 @@ const shell = (content, back=false) => {
   <header class="topbar">
     <div class="row">
       ${backHandler ? `<button class="btn ghost" onclick="${backHandler}" aria-label="Go back">←</button>` : ""}
-      <a class="brand-link" href="#/" aria-label="Numera home"><div class="brand">numera<span>.</span></div><div class="tagline">Homework that teaches.</div></a>
+      <a class="brand-link" href="#/" aria-label="Verve Maths home"><div class="brand-lockup"><img class="brand-mark" src="/logo.svg" alt="" width="30" height="30"><div><div class="brand">verve<span> maths.</span></div><div class="tagline">Homework that teaches.</div></div></div></a>
     </div>
     <span class="pill green">Prototype <span style="opacity:.7;font-weight:600">${NUMERA_VERSION}</span></span>
   </header>
@@ -197,7 +197,7 @@ window.appBack = () => {
   }
 
   // A homework link may have been opened directly from WhatsApp.
-  // In that case, keep the user inside Numera rather than closing the app.
+  // In that case, keep the user inside Verve rather than closing the app.
   if(now.startsWith("#/play") || now.startsWith("#/results")){
     location.hash="#/";
   }else if(now!=="#/"){
@@ -212,7 +212,7 @@ function installBackGuard(){
   sessionStorage.setItem("numera:backGuardInstalled","1");
 
   const initial=currentRoute();
-  // Put a safe Numera page immediately behind a directly opened deep link.
+  // Put a safe Verve page immediately behind a directly opened deep link.
   if(initial!=="#/"){
     history.replaceState({numeraFallback:true},"","#/");
     history.pushState({numeraRoute:true},"",initial);
@@ -335,7 +335,7 @@ function renderLanding(){
       <section class="l-hero">
         <div class="l-eyebrow"><span class="d"></span> Built with teachers, for teachers</div>
         <h1>Homework that <em>marks itself</em> — and teaches while it does.</h1>
-        <p class="l-sub">Snap a photo of any maths worksheet. Numera turns it into homework that marks every answer, explains each mistake, and shows you exactly what your class understands.</p>
+        <p class="l-sub">Snap a photo of any maths worksheet. Verve Maths turns it into homework that marks every answer, explains each mistake, and shows you exactly what your class understands.</p>
         <div class="l-cta-row">
           <a class="l-btn l-btn-primary" href="#/teacher-account">Set your first homework</a>
           <a class="l-btn l-btn-ghost" href="#/demo">See a student demo</a>
@@ -353,10 +353,10 @@ function renderLanding(){
       <section class="l-section">
         <div class="l-kicker">Why teachers love it</div>
         <h2>Less marking. More teaching.</h2>
-        <p class="l-secsub">Numera does the part of homework that eats your evenings, so you can spend your time on the part only you can do.</p>
+        <p class="l-secsub">Verve does the part of homework that eats your evenings, so you can spend your time on the part only you can do.</p>
         <div class="l-cards">
           <div class="l-card"><div class="l-ic l-ic1">⏱️</div><h3>Marking done for you</h3><p>Every answer marked the moment a child submits it. No red pen, no pile on your desk on Monday.</p></div>
-          <div class="l-card"><div class="l-ic l-ic2">💡</div><h3>Mistakes explained</h3><p>When a child gets stuck, Numera gives a gentle hint — not the answer — so they work it out and learn.</p></div>
+          <div class="l-card"><div class="l-ic l-ic2">💡</div><h3>Mistakes explained</h3><p>When a child gets stuck, Verve gives a gentle hint — not the answer — so they work it out and learn.</p></div>
           <div class="l-card"><div class="l-ic l-ic3">📊</div><h3>See who understands</h3><p>A clear picture of what each child has grasped and where they need help, built from their real work.</p></div>
         </div>
       </section>
@@ -366,7 +366,7 @@ function renderLanding(){
           <div class="l-kicker">Up and running in minutes</div>
           <h2>Your worksheet. Their homework. Your evening back.</h2>
           <div class="l-steps">
-            <div class="l-step"><div class="sn">1</div><h4>Snap it</h4><p>Photograph any worksheet. Numera reads the questions.</p></div>
+            <div class="l-step"><div class="sn">1</div><h4>Snap it</h4><p>Photograph any worksheet. Verve reads the questions.</p></div>
             <div class="l-step"><div class="sn">2</div><h4>Check &amp; send</h4><p>Glance over what it read, tweak anything, share one link.</p></div>
             <div class="l-step"><div class="sn">3</div><h4>See the results</h4><p>Children get instant feedback; you see how the class did.</p></div>
           </div>
@@ -392,13 +392,13 @@ function renderDemoAge(){
     <section class="mobile-page-head demo-age-head">
       <span class="step-chip">Student demo</span>
       <h1>How old is the child?</h1>
-      <p class="muted">Numera will create a short maths demo at an appropriate level.</p>
+      <p class="muted">Verve will create a short maths demo at an appropriate level.</p>
     </section>
     <div class="card demo-age-card">
       <div class="age-choice-grid">
         ${ages.map(age=>`<button class="age-choice" onclick="startDemo(${age})"><strong>${age}</strong><span>years old</span></button>`).join("")}
       </div>
-      <p class="small muted demo-age-note">The demo contains five questions and shows how Numera teaches, gives progressive hints and helps improve a score.</p>
+      <p class="small muted demo-age-note">The demo contains five questions and shows how Verve teaches, gives progressive hints and helps improve a score.</p>
     </div>
   `,true);
 }
@@ -411,7 +411,7 @@ window.startDemo = async age => {
     return;
   }
   try {
-    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Preparing an age-${selectedAge} demo…</h2><p class="muted">Numera is choosing suitable questions.</p></div>`,true);
+    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Preparing an age-${selectedAge} demo…</h2><p class="muted">Verve is choosing suitable questions.</p></div>`,true);
     const demo = await api("/api/demo", {
       method:"POST",
       body:JSON.stringify({age:selectedAge})
@@ -744,7 +744,7 @@ function studentReportMarkup(data){
   // --- Honest status line about the deeper capability that's coming ---
   const capNote = r.has_misconception_tagging
     ? ""
-    : `<p class="report-cap-note">As ${name} completes more work, Numera will begin identifying the <em>specific</em> misconceptions behind individual mistakes — not just the topic — and show them here.</p>`;
+    : `<p class="report-cap-note">As ${name} completes more work, Verve will begin identifying the <em>specific</em> misconceptions behind individual mistakes — not just the topic — and show them here.</p>`;
 
   return `
     <div class="report-card">
@@ -771,6 +771,20 @@ async function renderReviewHub(){
       <div id="reviewStudents" class="review-panel">${data.students.map(st=>`<article class="history-card"><div><h3>${esc(st.display_name)}</h3><p class="muted">${st.completed} completed · ${st.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/student-history?username=${encodeURIComponent(st.username)}">View</a></article>`).join("")||`<div class="empty card">No students yet.</div>`}</div>
       <div id="reviewHomeworks" class="review-panel hidden">${data.homeworks.map(h=>`<article class="history-card"><div><h3>${esc(h.title)}</h3><p class="muted">${h.completed}/${data.students.length} completed · ${h.average_mastery}% average mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(h.id)}">Results</a></article>`).join("")||`<div class="empty card">No homework yet.</div>`}</div>
       <div id="reviewInsights" class="review-panel hidden">
+        <details class="insight-how">
+          <summary>How these are worked out</summary>
+          <div class="insight-how-body">
+            <p><strong>Understanding score</strong> reflects how much help each answer needed, not just whether it was eventually right:</p>
+            <ul>
+              <li>Right first time, no hint → full credit (100%)</li>
+              <li>Right after 1 hint → 80% · 2 hints → 60% · 3 hints → 40% · 4 hints → 20%</li>
+              <li>Not reached → 0%</li>
+            </ul>
+            <p>So two pupils who both finished at 100% can score differently here — the one who needed fewer hints understands it more securely.</p>
+            <p><strong>Most improved</strong> is the jump from first-attempt marks to final mastery — pupils who work back to the right answer after feedback.</p>
+            <p class="insight-how-gems">💎 The <strong>gems</strong> pupils collect use this same logic — fewer hints earn more gems — so a pupil's gem count and their understanding here tell a consistent story. (Gems are a running total that also rewards doing more work, so they aren't a straight copy of this rate.)</p>
+          </div>
+        </details>
         <div class="insight-block">
           <h3 class="insight-h">Working most independently</h3>
           <p class="small muted">Understanding score — how much pupils work things out with the least help (not just final marks).</p>
@@ -1277,7 +1291,7 @@ async function extractHomework(){
       <div class="scan-animation"><span>📄</span><i></i></div>
       <span class="step-chip">Step 2 of 3</span>
       <h1>Reading the worksheet</h1>
-      <p class="muted">Numera is finding each question, checking the maths and preparing child-friendly help.</p>
+      <p class="muted">Verve is finding each question, checking the maths and preparing child-friendly help.</p>
       <div class="processing-list">
         <div class="active">1 <span>Preparing phone photos</span></div>
         <div>2 <span>Reading printed questions</span></div>
@@ -1408,7 +1422,7 @@ function renderReview(){
       <h1>${state.editingHomeworkId?"Edit homework questions":"Check the questions"}</h1>
       <p class="muted">${state.editingHomeworkId
         ? `Open each question one by one, make any changes, then save the homework.`
-        : `Numera found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.`}</p>
+        : `Verve found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.`}</p>
     </section>
     ${state.draft.warning ? `<div class="notice">${esc(state.draft.warning)}</div>` : ""}
     ${state.reusedFromTitle ? `<div class="notice reuse-banner"><strong>Fresh copy for a new class.</strong> This is a new homework based on "${esc(state.reusedFromTitle)}". Rename it below (and tweak anything you like), then publish — the original and its results stay untouched.</div>` : ""}
@@ -1436,7 +1450,7 @@ function questionEditor(q,i){
     <div class="question-form">
       <div class="question-source-row"><span class="pill">${esc(q.source_label||`Page ${(q.page_index??0)+1}`)}</span>${q.needs_visual?`<span class="pill orange">Visual question</span>`:""}</div>
       ${q.visual_data_url ? `<figure class="question-visual"><img src="${q.visual_data_url}" alt="Source visual for question ${i+1}"><figcaption>${q.visual_user_adjusted?"Teacher-adjusted image":"AI-selected image from the worksheet"}</figcaption></figure>` : `<div class="visual-missing-note">${q.needs_visual?"This question may need an image. Select the relevant area from the worksheet.":"No worksheet image attached."}</div>`}
-      ${q.multipart_incomplete?`<div class="notice multipart-warning"><strong>Check all parts:</strong> Numera detected more than one printed part but could not confidently read every separate answer. Complete or correct the part fields below before publishing.</div>`:""}
+      ${q.multipart_incomplete?`<div class="notice multipart-warning"><strong>Check all parts:</strong> Verve detected more than one printed part but could not confidently read every separate answer. Complete or correct the part fields below before publishing.</div>`:""}
       <div class="question-image-actions">
         <button type="button" class="btn secondary" onclick="openCropEditor(${i})">✂️ ${q.visual_data_url?"Adjust image":"Choose image area"}</button>
         <button type="button" class="btn secondary" onclick="document.getElementById('imgUpload${i}').click()">🖼️ Upload image</button>
@@ -1463,7 +1477,7 @@ function questionEditor(q,i){
       </div>`:""}
       ${q.type==="shade"?`<div class="interaction-editor">
         <strong>Shade-a-fraction setup</strong>
-        <p class="label-note" style="margin:2px 0 10px">Confirm the grid Numera read from the worksheet, and the fraction to shade. The photo reading can be wrong — please check it matches the printed shape.</p>
+        <p class="label-note" style="margin:2px 0 10px">Confirm the grid Verve read from the worksheet, and the fraction to shade. The photo reading can be wrong — please check it matches the printed shape.</p>
         <div class="row wrap">
           <div class="field"><label>Rows</label><input data-k="grid_rows" type="number" min="1" max="12" value="${esc(String(q.grid_rows||3))}" oninput="refreshShadePreview(${i})"></div>
           <div class="field"><label>Columns</label><input data-k="grid_cols" type="number" min="1" max="12" value="${esc(String(q.grid_cols||3))}" oninput="refreshShadePreview(${i})"></div>
@@ -1476,7 +1490,7 @@ function questionEditor(q,i){
       ${q.type==="multiple_choice"?`<div class="suggest-options-row"><button type="button" class="btn secondary" onclick="suggestOptions(${i})">✨ Suggest answers</button><span class="suggest-hint muted">Generates the correct answer plus common-mistake distractors</span></div><div class="suggest-result" id="suggestResult${i}"></div>`:""}
       ${(q.requires_teacher_check || ["drawing","point","coordinate","matching","shade"].includes(q.type)) ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
-        <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : q.type==="shade" ? "Confirm the grid size and fraction above match the printed shape before publishing — the photo reading of grids can be wrong." : "Numera counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
+        <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : q.type==="shade" ? "Confirm the grid size and fraction above match the printed shape before publishing — the photo reading of grids can be wrong." : "Verve counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
         ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
         <label class="confirm-check"><input type="checkbox" data-k="teacher_confirmed" ${q.teacher_confirmed?"checked":""}> I have checked this question and answer</label>
       </div>` : ""}
@@ -1912,7 +1926,7 @@ function renderPublished(){
 
 // The visible "loop" — the Stories-style "seen by" moment. After the teacher
 // publishes, show their real accumulated impact: questions they've reviewed
-// (time saved) and corrections they've made (which make Numera read their
+// (time saved) and corrections they've made (which make Verve read their
 // worksheets better). Only shows real numbers; silent if unavailable.
 async function showImpactLoop(){
   const el=$("#impactLoop");
@@ -1929,22 +1943,22 @@ async function showImpactLoop(){
       : `about ${minutesSaved} minutes`;
     const theme=(r.themes||[]).find(t=>t.question_topic);
     const themeLine = corrections>0
-      ? `Your ${corrections} correction${corrections===1?"":"s"} ${corrections===1?"is":"are"} teaching Numera to read your worksheets more accurately${theme?` — especially ${esc(theme.question_topic)} questions`:""}.`
+      ? `Your ${corrections} correction${corrections===1?"":"s"} ${corrections===1?"is":"are"} teaching Verve to read your worksheets more accurately${theme?` — especially ${esc(theme.question_topic)} questions`:""}.`
       : "";
     el.innerHTML=`
       <div class="card impact-card">
         <div class="impact-row"><span class="impact-num">${reviewed}</span><span class="impact-label">questions reviewed &middot; ${timePhrase} of marking saved</span></div>
-        ${corrections>0?`<div class="impact-row"><span class="impact-num">${corrections}</span><span class="impact-label">corrections that improve Numera for your class</span></div>`:""}
+        ${corrections>0?`<div class="impact-row"><span class="impact-num">${corrections}</span><span class="impact-label">corrections that improve Verve for your class</span></div>`:""}
         ${themeLine?`<p class="impact-note">${themeLine}</p>`:""}
       </div>`;
   }catch(e){ /* silent — the loop is a bonus, never an error surface */ }
 }
 window.copyField=async id=>{await navigator.clipboard.writeText($("#"+id).value); alert("Copied.");};
 window.shareLink=async url=>{
-  if(navigator.share) await navigator.share({title:"Numera homework",text:"Here is today’s Numera maths homework.",url});
+  if(navigator.share) await navigator.share({title:"Verve Maths homework",text:"Here is today’s Verve maths homework.",url});
   else {await navigator.clipboard.writeText(url); alert("Link copied.");}
 };
-window.shareHomeworkWhatsApp=url=>{const u=`https://wa.me/?text=${encodeURIComponent(`Here is today’s Numera maths homework:\n${url}`)}`;const opened=window.open(u,"_blank","noopener,noreferrer");if(!opened){navigator.clipboard?.writeText(url);alert("The link was copied. Paste it into WhatsApp.");}};
+window.shareHomeworkWhatsApp=url=>{const u=`https://wa.me/?text=${encodeURIComponent(`Here is today’s Verve maths homework:\n${url}`)}`;const opened=window.open(u,"_blank","noopener,noreferrer");if(!opened){navigator.clipboard?.writeText(url);alert("The link was copied. Paste it into WhatsApp.");}};
 
 async function loadHomework(id, mode){
   if(!id) return renderLanding();
@@ -1966,7 +1980,7 @@ function renderJoin(){
   app.innerHTML=shell(`
     <div class="mission"><div class="mascot">🟢</div><h1>Welcome!</h1><p class="muted">${esc(state.homework.title)}</p></div>
     <div class="card">
-      <div class="field"><label>Child’s Numera username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. User123"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
+      <div class="field"><label>Child’s Verve username</label><input id="studentUsername" autocapitalize="none" autocomplete="username" value="${esc(state.studentUsername||"")}" placeholder="e.g. User123"><span class="field-help">Use the same username for every homework so progress can be joined together.</span></div>
       <div class="field"><label>Child’s first name</label><input id="studentName" autocomplete="given-name" placeholder="e.g. Thomas"></div>
       <div class="field"><label>Four-digit PIN</label><input id="studentPin" inputmode="numeric" maxlength="4" placeholder="••••"></div>
       <button class="btn green block" onclick="joinHomework()">Continue</button>
@@ -2779,7 +2793,7 @@ window.checkAnswer=async()=>{
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const parsed=JSON.parse(given);
-    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Checking the drawing…</h2><p class="muted">Numera is comparing the drawing with the task.</p></div>`,true);
+    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Checking the drawing…</h2><p class="muted">Verve is comparing the drawing with the task.</p></div>`,true);
     try{
       const mark=await api("/api/mark-drawing",{method:"POST",body:JSON.stringify({prompt:q.prompt,rubric:q.drawing_rubric||q.answer_working||q.answer||"",source_image:q.visual_data_url||"",drawing_image:parsed.composite||parsed.preview})});
       const auto=mark.confidence>=0.72;
@@ -2892,7 +2906,7 @@ window.checkPractice=()=>{
       <div class="mission">
         <div class="mascot">🌱</div>
         <h1>Let’s keep going</h1>
-        <div class="feedback learn">That one was still tricky. Numera has recorded it as a skill to practise, and we’ll move to the next question.</div>
+        <div class="feedback learn">That one was still tricky. Verve has recorded it as a skill to practise, and we’ll move to the next question.</div>
         <button class="btn green block" onclick="nextQuestion()">Next question</button>
       </div>
     `);
@@ -3013,7 +3027,7 @@ function renderSavingResults(){
     <div class="mission">
       <div class="spinner"></div>
       <h1>Saving your results…</h1>
-      <p class="muted">Keep this page open until Numera confirms the result has been recorded.</p>
+      <p class="muted">Keep this page open until Verve confirms the result has been recorded.</p>
     </div>
   `);
 }
@@ -3178,7 +3192,7 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div class="feedback learn"><strong>Parent suggestion</strong><br>Ask ${esc(state.studentName)} to explain one question aloud. Explaining the method helps make the learning stick.</div>
     </div>
     <div class="card child-history-card">
-      <div class="row between wrap"><div><h3>${esc(state.studentName)}’s Numera progress</h3><p class="muted">Past homework for <strong>@${esc(state.studentUsername)}</strong>.</p></div><button class="btn secondary" onclick="loadParentProgress()">↻ Refresh</button></div>
+      <div class="row between wrap"><div><h3>${esc(state.studentName)}’s Verve progress</h3><p class="muted">Past homework for <strong>@${esc(state.studentUsername)}</strong>.</p></div><button class="btn secondary" onclick="loadParentProgress()">↻ Refresh</button></div>
       <div id="parentProgress"><div class="spinner small-spinner"></div><p class="muted">Loading past results…</p></div>
     </div>
   `);
@@ -3288,7 +3302,7 @@ function renderLevelUpComplete(mastered,total){
 window.shareTeacherResults = async () => {
   const url = `${location.origin}${location.pathname}#/results?id=${state.homework.id}`;
   if (navigator.share) {
-    await navigator.share({title:"Numera teacher results", text:`${state.studentName}'s Numera results`, url});
+    await navigator.share({title:"Verve Maths teacher results", text:`${state.studentName}'s Verve results`, url});
   } else {
     await navigator.clipboard.writeText(url);
     alert("Teacher-results link copied.");

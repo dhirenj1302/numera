@@ -1,0 +1,13 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Verve Maths logo">
+  <rect width="64" height="64" rx="16" fill="#1b1145"/>
+  <!-- upward spark 'V' — momentum/lift -->
+  <path d="M18 20 L32 46 L46 20" stroke="url(#vg)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- energy tick rising off the V -->
+  <path d="M40 26 L48 14" stroke="#ffab2e" stroke-width="6" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="vg" x1="18" y1="20" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff3d81"/>
+      <stop offset="1" stop-color="#ff6a4d"/>
+    </linearGradient>
+  </defs>
+</svg>
