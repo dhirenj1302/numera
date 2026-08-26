@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.51";
+const NUMERA_VERSION = "v2.52";
 const state = {
   files: [],
   sourceImages: [],
@@ -3395,13 +3395,6 @@ async function renderResults(){
       : `<strong>${esc(s.student_name)}</strong>`;
     return `<tr><td>${nameCell}</td><td>${op}%</td><td>${mp}%</td><td>${flag}</td><td>${new Date(s.completed_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</td></tr>`;
   }).join("");
-  // Keep an individual-struggle question short: first sentence or ~48 chars.
-  function briefPrompt(p){
-    let t=String(p||"").replace(/\s+/g," ").trim();
-    if(t.length<=48) return t;
-    return t.slice(0,47).replace(/\s+\S*$/,"")+"…";
-  }
-
   const complete=submissions.length;
   const avgO=complete?Math.round(submissions.reduce((a,s)=>a+s.original_score/s.total_questions*100,0)/complete):0;
   const avgM=complete?Math.round(submissions.reduce((a,s)=>a+s.mastery_score/s.total_questions*100,0)/complete):0;
@@ -3505,7 +3498,7 @@ async function renderResults(){
         <p class="muted">Questions a single child found tricky (separate from the whole-class ones above):</p>
         ${individualList.map(c=>`<div class="individual-row">
           <span class="individual-name">${esc(c.student)}</span>
-          <span class="individual-detail">${c.items.slice(0,4).map(it=>`<span class="ind-q"><b>Q${it.index+1}</b> ${esc(briefPrompt(it.prompt))}${it.recovered?"":" (unfinished)"}</span>`).join("")}${c.items.length>4?`<span class="ind-q">+${c.items.length-4} more</span>`:""}</span>
+          <span class="individual-detail">${c.items.slice(0,4).map(it=>`<span class="ind-q"><b>Q${it.index+1}</b> ${esc(it.prompt)}${it.recovered?"":" (unfinished)"}</span>`).join("")}${c.items.length>4?`<span class="ind-q">+${c.items.length-4} more</span>`:""}</span>
         </div>`).join("")}
       </div>`
     : "";

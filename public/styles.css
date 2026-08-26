@@ -696,6 +696,6 @@
 .individual-row{padding:10px 0;border-top:1px solid var(--line)}
 .individual-row:first-of-type{border-top:none}
 .individual-name{display:block;font-weight:700;color:var(--ink);margin-bottom:4px}
-.individual-detail{display:flex;flex-direction:column;gap:3px}
-.ind-q{color:var(--muted);font-size:13.5px}
-.ind-q b{color:var(--indigo);font-weight:700;margin-right:4px}
+.individual-detail{display:flex;flex-direction:column;gap:5px}
+.ind-q{color:var(--muted);font-size:13.5px;line-height:1.45}
+.ind-q b{color:var(--indigo);font-weight:700;margin-right:5px}
