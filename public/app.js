@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.47";
+const NUMERA_VERSION = "v2.48";
 const state = {
   files: [],
   sourceImages: [],
@@ -3390,7 +3390,10 @@ async function renderResults(){
   const rows=submissions.map(s=>{
     const op=Math.round(s.original_score/s.total_questions*100), mp=Math.round(s.mastery_score/s.total_questions*100);
     const flag=mp<70?`<span class="pill orange">Needs support</span>`:op>90?`<span class="pill green">Needs challenge</span>`:`<span class="pill">On track</span>`;
-    return `<tr><td><strong>${esc(s.student_name)}</strong></td><td>${op}%</td><td>${mp}%</td><td>${flag}</td><td>${new Date(s.completed_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</td></tr>`;
+    const nameCell = s.student_username
+      ? `<a class="student-link" href="#/student-history?username=${encodeURIComponent(s.student_username)}"><strong>${esc(s.student_name)}</strong></a>`
+      : `<strong>${esc(s.student_name)}</strong>`;
+    return `<tr><td>${nameCell}</td><td>${op}%</td><td>${mp}%</td><td>${flag}</td><td>${new Date(s.completed_at+"Z").toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"})}</td></tr>`;
   }).join("");
   const complete=submissions.length;
   const avgO=complete?Math.round(submissions.reduce((a,s)=>a+s.original_score/s.total_questions*100,0)/complete):0;

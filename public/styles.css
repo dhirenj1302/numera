@@ -676,3 +676,8 @@
 /* --- Verve brand lockup (logo + wordmark) --- */
 .brand-lockup{display:flex;align-items:center;gap:9px}
 .brand-mark{display:block;border-radius:8px;flex:0 0 auto}
+
+/* --- Clickable student name in the results dashboard (v2.48) --- */
+.student-link{color:var(--verve);text-decoration:none;border-bottom:1.5px solid transparent;transition:border-color .12s}
+.student-link:hover,.student-link:focus{border-bottom-color:var(--verve)}
+.student-link strong{color:inherit}
