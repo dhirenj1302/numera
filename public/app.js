@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.52";
+const NUMERA_VERSION = "v2.53";
 const state = {
   files: [],
   sourceImages: [],
@@ -3404,15 +3404,20 @@ async function renderResults(){
   //     first-attempt understanding across every child who did it; the lowest
   //     scores are what the class struggled with most. This turns the dashboard
   //     into a concrete "discuss these tomorrow" signal. ---
-  const HINT_CREDIT=[1.0,0.8,0.6,0.4,0.2];
-  const qUnderstanding=(a)=>{
-    const solved=a && (a.first_correct===true||a.first_correct===1||a.mastered===true||a.mastered===1);
-    if(!solved) return 0;
-    const usedHint=a.hint_used===true||a.hint_used===1;
-    if(!usedHint) return 1.0;
-    return HINT_CREDIT[Math.max(0,Math.min(4,Number(a.highest_hint_level)||0))];
+  // --- Per-question difficulty, organised by question and by WHICH children
+  //     struggled. One consistent rule everywhere: a child "struggled" on a
+  //     question if they got it wrong first time OR needed 2+ hints (a single
+  //     light hint doesn't count). Then we split questions by HOW MANY children
+  //     struggled: many -> teach the whole class again; a few -> pull that
+  //     small group aside. Every struggled question appears in exactly one
+  //     section and always names the children. ---
+  const struggledOn=(a)=>{
+    if(!a || a.requires_teacher_review) return false;
+    const wrongFirst = !(a.first_correct===true||a.first_correct===1);
+    const deepHelp = (a.hint_used===true||a.hint_used===1) && (Number(a.highest_hint_level)||0)>=2;
+    return wrongFirst || deepHelp;
   };
-  const qAgg={}; // index -> {sum, n, struggled}
+  const qMap={}; // index -> {n, strugglers:[names], recoveredByName:{}}
   for(const s of submissions){
     let atts=s.attempts;
     if(!Array.isArray(atts)){ try{ atts=JSON.parse(s.attempts_json||"[]"); }catch{ atts=[]; } }
@@ -3420,86 +3425,67 @@ async function renderResults(){
       if(!a || a.requires_teacher_review) continue;
       const idx=Number(a.question_index);
       if(!Number.isInteger(idx)) continue;
-      if(!qAgg[idx]) qAgg[idx]={sum:0,n:0,struggled:0};
-      const u=qUnderstanding(a);
-      qAgg[idx].sum+=u; qAgg[idx].n+=1;
-      if(u<1.0) qAgg[idx].struggled+=1; // needed a hint or didn't get it first time
-    }
-  }
-  const hardest=Object.entries(qAgg)
-    .map(([idx,v])=>({
-      index:Number(idx),
-      understanding:Math.round((v.sum/v.n)*100),
-      struggled:v.struggled,
-      n:v.n,
-      prompt:(state.homework.questions[Number(idx)]?.prompt)||`Question ${Number(idx)+1}`,
-      topic:(state.homework.questions[Number(idx)]?.topic)||""
-    }))
-    // Only surface genuinely hard ones (class understanding below 85, and more
-    // than one child affected where possible), hardest first.
-    .filter(q=>q.understanding<85)
-    .sort((a,b)=> a.understanding-b.understanding || b.struggled-a.struggled)
-    .slice(0,2);
-
-  // --- Individual struggles: questions a SINGLE child found hard that aren't
-  //     already flagged class-wide. Labelled by child so the teacher can follow
-  //     up individually without mistaking it for a whole-class issue. ---
-  const classHardSet=new Set(hardest.map(q=>q.index));
-  const individualStruggles=[];
-  for(const s of submissions){
-    let atts=s.attempts;
-    if(!Array.isArray(atts)){ try{ atts=JSON.parse(s.attempts_json||"[]"); }catch{ atts=[]; } }
-    for(const a of (atts||[])){
-      if(!a || a.requires_teacher_review) continue;
-      const idx=Number(a.question_index);
-      if(!Number.isInteger(idx) || classHardSet.has(idx)) continue; // skip class-wide ones
-      const u=qUnderstanding(a);
-      // A real individual struggle: got it wrong first time, or leaned on deeper
-      // hints (level 2+). A single light hint isn't worth flagging.
-      const wrongFirst = !(a.first_correct===true||a.first_correct===1);
-      const deepHelp = (a.hint_used===true||a.hint_used===1) && (Number(a.highest_hint_level)||0)>=2;
-      if(wrongFirst || deepHelp){
-        individualStruggles.push({
-          student:s.student_name,
-          index:idx,
-          prompt:(state.homework.questions[idx]?.prompt)||`Question ${idx+1}`,
-          recovered:(a.mastered===true||a.mastered===1)
-        });
+      if(!qMap[idx]) qMap[idx]={index:idx,n:0,strugglers:[],recovered:{}};
+      qMap[idx].n+=1;
+      if(struggledOn(a)){
+        qMap[idx].strugglers.push(s.student_name);
+        qMap[idx].recovered[s.student_name]=(a.mastered===true||a.mastered===1);
       }
     }
   }
-  // Group by child so each pupil is one line, listing their tricky questions.
-  const byChild={};
-  for(const s of individualStruggles){
-    if(!byChild[s.student]) byChild[s.student]={student:s.student,items:[]};
-    byChild[s.student].items.push(s);
-  }
-  const individualList=Object.values(byChild).slice(0,6); // cap to keep it readable
+  // Attach prompt/topic and keep only questions someone struggled with.
+  const struggledQuestions=Object.values(qMap)
+    .filter(q=>q.strugglers.length>0)
+    .map(q=>({
+      ...q,
+      prompt:(state.homework.questions[q.index]?.prompt)||`Question ${q.index+1}`,
+      topic:(state.homework.questions[q.index]?.topic)||"",
+      share:q.n?q.strugglers.length/q.n:0
+    }));
+  // Whole-class = at least half the children who did it struggled (and at least 2
+  // children), OR everyone did. Otherwise it's a small-group question.
+  const wholeClass=struggledQuestions
+    .filter(q=> q.strugglers.length>=2 && q.share>=0.5)
+    .sort((a,b)=> b.share-a.share || b.strugglers.length-a.strugglers.length);
+  const wholeClassSet=new Set(wholeClass.map(q=>q.index));
+  const smallGroup=struggledQuestions
+    .filter(q=> !wholeClassSet.has(q.index))
+    .sort((a,b)=> b.strugglers.length-a.strugglers.length || a.index-b.index);
 
-  const hardestCard = complete===0
+  const namesList=(names)=>{
+    const uniq=[...new Set(names)];
+    if(uniq.length===1) return esc(uniq[0]);
+    if(uniq.length===2) return `${esc(uniq[0])} and ${esc(uniq[1])}`;
+    return esc(uniq.slice(0,-1).join(", "))+" and "+esc(uniq[uniq.length-1]);
+  };
+
+  const qMeta=(q)=>`${q.strugglers.length} of ${q.n} · ${q.topic?esc(q.topic):"—"}`;
+
+  const wholeClassCard = complete===0
     ? `<div class="card"><h3>What to look for tomorrow</h3><p class="muted">Insights will appear here once children have completed this homework.</p></div>`
-    : hardest.length
+    : wholeClass.length
       ? `<div class="card hardest-card">
-          <h3>💡 Discuss with the class tomorrow</h3>
-          <p class="muted">The question${hardest.length>1?"s":""} the class found hardest — worth going over together:</p>
-          ${hardest.map(q=>`<div class="hardest-q">
-            <div class="hardest-q-head"><span class="hardest-q-num">Q${q.index+1}</span><span class="hardest-q-under">${q.understanding}% class understanding</span></div>
+          <h3>💡 Go over with the whole class</h3>
+          <p class="muted">Most of the class struggled with ${wholeClass.length>1?"these":"this"} — worth teaching again together:</p>
+          ${wholeClass.map(q=>`<div class="hardest-q">
+            <div class="hardest-q-head"><span class="hardest-q-num">Q${q.index+1}</span><span class="hardest-q-under">${q.strugglers.length} of ${q.n} children</span></div>
             <div class="hardest-q-prompt">${esc(q.prompt)}</div>
-            <div class="hardest-q-meta">${q.struggled} of ${q.n} child${q.n===1?"":"ren"} needed help or got it wrong first time${q.topic?` · ${esc(q.topic)}`:""}</div>
+            <div class="hardest-q-meta">Found hard by ${namesList(q.strugglers)}${q.topic?` · ${esc(q.topic)}`:""}</div>
           </div>`).join("")}
         </div>`
-      : `<div class="card"><h3>✅ A strong set of results</h3><p class="muted">No single question stood out as difficult for the class — most children worked through this well. Children scoring 100% first time may be ready for more challenge.</p></div>`;
+      : `<div class="card"><h3>✅ A strong set of results</h3><p class="muted">No question tripped up most of the class — nothing needs whole-class reteaching. ${smallGroup.length?"A few individual questions to check are below.":"Children scoring 100% first time may be ready for more challenge."}</p></div>`;
 
-  // Individual struggles card — only when there are any, and clearly framed as
-  // per-child (not a whole-class issue).
-  const individualCard = individualList.length
+  // Small-group card: other questions some children struggled with, each listed
+  // with the children who found it hard, so the teacher can pull that group aside.
+  const smallGroupCard = (complete>0 && smallGroup.length)
     ? `<div class="card individual-card">
-        <h3>👤 Individual pupils to check in with</h3>
-        <p class="muted">Questions a single child found tricky (separate from the whole-class ones above):</p>
-        ${individualList.map(c=>`<div class="individual-row">
-          <span class="individual-name">${esc(c.student)}</span>
-          <span class="individual-detail">${c.items.slice(0,4).map(it=>`<span class="ind-q"><b>Q${it.index+1}</b> ${esc(it.prompt)}${it.recovered?"":" (unfinished)"}</span>`).join("")}${c.items.length>4?`<span class="ind-q">+${c.items.length-4} more</span>`:""}</span>
+        <h3>👥 Small groups to pull aside</h3>
+        <p class="muted">Other questions only some children struggled with — talk to each group:</p>
+        ${smallGroup.slice(0,6).map(q=>`<div class="group-q">
+          <div class="group-q-head"><span class="group-q-num">Q${q.index+1}</span><span class="group-q-prompt">${esc(q.prompt)}</span></div>
+          <div class="group-q-names">Found hard by <strong>${namesList(q.strugglers)}</strong>${q.topic?` · ${esc(q.topic)}`:""}</div>
         </div>`).join("")}
+        ${smallGroup.length>6?`<p class="muted" style="margin-top:8px">+${smallGroup.length-6} more question${smallGroup.length-6===1?"":"s"}</p>`:""}
       </div>`
     : "";
 
@@ -3513,8 +3499,8 @@ async function renderResults(){
     <div class="card" style="margin-top:14px">
       <div class="table-wrap"><table><thead><tr><th>Student</th><th>Original</th><th>Mastery</th><th>Action</th><th>Completed</th></tr></thead><tbody>${rows||`<tr><td colspan="5" class="empty">No submissions yet. Open the student link to complete the first homework.</td></tr>`}</tbody></table></div>
     </div>
-    ${hardestCard}
-    ${individualCard}
+    ${wholeClassCard}
+    ${smallGroupCard}
   `,true);
 }
 
