@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.46";
+const NUMERA_VERSION = "v2.47";
 const state = {
   files: [],
   sourceImages: [],
@@ -337,7 +337,7 @@ function renderLanding(){
         <h1>Homework that <em>marks itself</em> — and teaches while it does.</h1>
         <p class="l-sub">Snap a photo of any maths worksheet. Verve Maths turns it into homework that marks every answer, explains each mistake, and shows you exactly what your class understands.</p>
         <div class="l-cta-row">
-          <a class="l-btn l-btn-primary" href="#/teacher-account">Set your first homework</a>
+          <a class="l-btn l-btn-primary" href="#/teacher-account">Set a homework</a>
           <a class="l-btn l-btn-ghost" href="#/demo">See a student demo</a>
         </div>
         <div class="l-trust">✎ No email needed to start &nbsp;·&nbsp; Free for your first class</div>
@@ -375,8 +375,8 @@ function renderLanding(){
 
       <section class="l-final">
         <h2>Ready to stop marking?</h2>
-        <p>Set your first homework in the next five minutes. No email, no card, no catch.</p>
-        <a class="l-btn l-btn-primary" href="#/teacher-account">Set your first homework</a>
+        <p>Set a homework in the next five minutes. No email, no card, no catch.</p>
+        <a class="l-btn l-btn-primary" href="#/teacher-account">Set a homework</a>
       </section>
 
       <section class="l-section" style="padding-top:20px">
@@ -820,7 +820,7 @@ function renderTeacher(){
         <span class="icon">🗂️</span><span><strong>Past homeworks</strong><br><span class="muted small">Open previous homework and class results</span></span>
       </button>
     </div>
-    <div class="notice" style="margin-top:24px"><strong>Prototype privacy:</strong> use only Aaryan’s first name and avoid uploading pages containing pupil information.</div>
+    <div class="notice" style="margin-top:24px"><strong>Prototype privacy:</strong> use pupils’ first names only, and avoid uploading pages containing pupil information.</div>
   `, true);
 }
 window.openLastResults = () => {
