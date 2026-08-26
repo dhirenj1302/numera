@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.49";
+const NUMERA_VERSION = "v2.50";
 const state = {
   files: [],
   sourceImages: [],
@@ -3441,6 +3441,41 @@ async function renderResults(){
     .sort((a,b)=> a.understanding-b.understanding || b.struggled-a.struggled)
     .slice(0,2);
 
+  // --- Individual struggles: questions a SINGLE child found hard that aren't
+  //     already flagged class-wide. Labelled by child so the teacher can follow
+  //     up individually without mistaking it for a whole-class issue. ---
+  const classHardSet=new Set(hardest.map(q=>q.index));
+  const individualStruggles=[];
+  for(const s of submissions){
+    let atts=s.attempts;
+    if(!Array.isArray(atts)){ try{ atts=JSON.parse(s.attempts_json||"[]"); }catch{ atts=[]; } }
+    for(const a of (atts||[])){
+      if(!a || a.requires_teacher_review) continue;
+      const idx=Number(a.question_index);
+      if(!Number.isInteger(idx) || classHardSet.has(idx)) continue; // skip class-wide ones
+      const u=qUnderstanding(a);
+      // A real individual struggle: got it wrong first time, or leaned on deeper
+      // hints (level 2+). A single light hint isn't worth flagging.
+      const wrongFirst = !(a.first_correct===true||a.first_correct===1);
+      const deepHelp = (a.hint_used===true||a.hint_used===1) && (Number(a.highest_hint_level)||0)>=2;
+      if(wrongFirst || deepHelp){
+        individualStruggles.push({
+          student:s.student_name,
+          index:idx,
+          prompt:(state.homework.questions[idx]?.prompt)||`Question ${idx+1}`,
+          recovered:(a.mastered===true||a.mastered===1)
+        });
+      }
+    }
+  }
+  // Group by child so each pupil is one line, listing their tricky questions.
+  const byChild={};
+  for(const s of individualStruggles){
+    if(!byChild[s.student]) byChild[s.student]={student:s.student,items:[]};
+    byChild[s.student].items.push(s);
+  }
+  const individualList=Object.values(byChild).slice(0,6); // cap to keep it readable
+
   const hardestCard = complete===0
     ? `<div class="card"><h3>What to look for tomorrow</h3><p class="muted">Insights will appear here once children have completed this homework.</p></div>`
     : hardest.length
@@ -3455,6 +3490,19 @@ async function renderResults(){
         </div>`
       : `<div class="card"><h3>✅ A strong set of results</h3><p class="muted">No single question stood out as difficult for the class — most children worked through this well. Children scoring 100% first time may be ready for more challenge.</p></div>`;
 
+  // Individual struggles card — only when there are any, and clearly framed as
+  // per-child (not a whole-class issue).
+  const individualCard = individualList.length
+    ? `<div class="card individual-card">
+        <h3>👤 Individual pupils to check in with</h3>
+        <p class="muted">Questions a single child found tricky (separate from the whole-class ones above):</p>
+        ${individualList.map(c=>`<div class="individual-row">
+          <span class="individual-name">${esc(c.student)}</span>
+          <span class="individual-detail">${c.items.slice(0,4).map(it=>`Q${it.index+1}${it.recovered?"":" (unfinished)"}`).join(", ")}${c.items.length>4?` +${c.items.length-4} more`:""}</span>
+        </div>`).join("")}
+      </div>`
+    : "";
+
   app.innerHTML=shell(`
     <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><div class="row wrap"><button class="btn secondary" onclick="renderResults()">↻ Refresh</button><a class="btn secondary" href="#/edit-homework?id=${state.homework.id}">✏ Edit homework</a></div></div>
     ${resultsError?`<div class="notice"><strong>Results could not be loaded:</strong> ${esc(resultsError)}</div>`:""}
@@ -3466,6 +3514,7 @@ async function renderResults(){
       <div class="table-wrap"><table><thead><tr><th>Student</th><th>Original</th><th>Mastery</th><th>Action</th><th>Completed</th></tr></thead><tbody>${rows||`<tr><td colspan="5" class="empty">No submissions yet. Open the student link to complete the first homework.</td></tr>`}</tbody></table></div>
     </div>
     ${hardestCard}
+    ${individualCard}
   `,true);
 }
 

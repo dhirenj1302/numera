@@ -690,3 +690,10 @@
 .hardest-q-under{font-weight:700;color:#b45309;font-size:13px}
 .hardest-q-prompt{color:var(--ink);font-weight:600;line-height:1.4}
 .hardest-q-meta{margin-top:6px;color:var(--muted);font-size:12.5px}
+
+/* --- Individual struggles card (v2.50) --- */
+.individual-card{border:1.5px solid var(--indigo-soft)}
+.individual-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.individual-row:first-of-type{border-top:none}
+.individual-name{font-weight:700;color:var(--ink);flex:0 0 auto}
+.individual-detail{color:var(--indigo);font-weight:600;font-size:13.5px;text-align:right}
