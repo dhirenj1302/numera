@@ -691,9 +691,11 @@
 .hardest-q-prompt{color:var(--ink);font-weight:600;line-height:1.4}
 .hardest-q-meta{margin-top:6px;color:var(--muted);font-size:12.5px}
 
-/* --- Individual struggles card (v2.50) --- */
+/* --- Individual struggles card (v2.50, refined v2.51) --- */
 .individual-card{border:1.5px solid var(--indigo-soft)}
-.individual-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+.individual-row{padding:10px 0;border-top:1px solid var(--line)}
 .individual-row:first-of-type{border-top:none}
-.individual-name{font-weight:700;color:var(--ink);flex:0 0 auto}
-.individual-detail{color:var(--indigo);font-weight:600;font-size:13.5px;text-align:right}
+.individual-name{display:block;font-weight:700;color:var(--ink);margin-bottom:4px}
+.individual-detail{display:flex;flex-direction:column;gap:3px}
+.ind-q{color:var(--muted);font-size:13.5px}
+.ind-q b{color:var(--indigo);font-weight:700;margin-right:4px}
