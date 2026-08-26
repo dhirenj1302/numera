@@ -81,7 +81,7 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","hints","explanation","topic","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","grid_rows","grid_cols","shade_fraction","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","difficulty","year_group","question_type","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","grid_rows","grid_cols","shade_fraction","parts"],
         properties:{
           type:{type:"string",enum:["number","time","multiple_choice","drawing","point","coordinate","matching","fraction","fraction_visual","drag","clock","angle","shade","multipart"]},
           prompt:{type:"string"},
@@ -91,6 +91,9 @@ const pageSchema = {
           hints:{type:"array",minItems:4,maxItems:4,items:{type:"string"}},
           explanation:{type:"string"},
           topic:{type:"string"},
+          difficulty:{type:"string",enum:["foundation","developing","secure","greater_depth"]},
+          year_group:{type:"string",enum:["Reception","Year 1","Year 2","Year 3","Year 4","Year 5","Year 6","unknown"]},
+          question_type:{type:"string",enum:["fluency","reasoning","word_problem"]},
           practice_prompt:{type:"string"},
           practice_answer:{type:"string"},
           needs_visual:{type:"boolean"},
@@ -327,6 +330,11 @@ For every complete visible question:
 9c. MULTI-STEP CALCULATIONS MUST BE VERIFIED AND SELF-CONSISTENT. For any question needing two or more calculation steps (e.g. elapsed time, "how many more/longer than", multi-operation word problems), work the answer out step by step in answer_working, then re-check each number. The final 'answer', every hint, the 'answer_working', and the incorrect-answer 'feedback' MUST all use the SAME numbers and reach the SAME final answer — never let them contradict each other. Double-check elapsed-time sums in particular (e.g. 9:10 a.m. to 12:00 noon = 170 minutes, not 110). Set requires_teacher_check=true for any multi-step calculation so a teacher can confirm it.
 18. Set requires_teacher_check=true for every drawing, point or matching question.
 9b. TOPIC LABELS MUST BE SPECIFIC. For each question's 'topic', give a precise, descriptive skill label of about 2–5 words — the specific skill the question tests, not a broad umbrella. Good: "reading a 24-hour clock", "abacus place value", "multi-step word problem", "adding fractions same denominator", "fraction of an amount", "column subtraction with exchange", "shading equivalent fractions", "converting mm to cm". Avoid vague labels like "Mixed maths", "Basic arithmetic", "Fractions", "Number" on their own. Base the label on what the pupil actually has to DO in that specific question. Keep labels consistent: if two questions test the same skill, give them the same label word-for-word so they group together in reports.
+9d. TAG EACH QUESTION for later filtering. Set three fields based ONLY on the question content and your knowledge of the England National Curriculum for primary maths:
+- year_group: the National Curriculum year the SKILL is normally taught (Reception, Year 1 … Year 6). Infer from the maths itself — e.g. number bonds to 10 = Year 1; adding fractions with the same denominator = Year 3; long multiplication = Year 5; long division = Year 6. Use "unknown" only if you genuinely cannot tell.
+- difficulty: the demand of THIS question relative to that year: "foundation" (simplest, early in the topic), "developing" (typical practice), "secure" (full expectation), or "greater_depth" (stretch / multi-step / reasoning beyond the basic skill).
+- question_type: "fluency" (a bare calculation or recall), "reasoning" (explain / compare / spot the pattern), or "word_problem" (a real-world scenario in words).
+These are best-effort tags for organising a question library; the teacher can change any of them, so never let tagging change the transcription of the question itself.
 19. Every returned question must include every schema field. For fields that do not apply, use these neutral values:
 - point_answer: [0,0]
 - coordinate_answer: [0,0]
