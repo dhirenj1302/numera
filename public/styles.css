@@ -681,3 +681,12 @@
 .student-link{color:var(--verve);text-decoration:none;border-bottom:1.5px solid transparent;transition:border-color .12s}
 .student-link:hover,.student-link:focus{border-bottom-color:var(--verve)}
 .student-link strong{color:inherit}
+
+/* --- Hardest-questions insight on results dashboard (v2.49) --- */
+.hardest-card{border:1.5px solid var(--amber-soft);background:linear-gradient(135deg,#fffdf7,#fff9ee)}
+.hardest-q{margin-top:12px;padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:12px}
+.hardest-q-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.hardest-q-num{font-weight:800;color:var(--verve);background:var(--verve-soft);border-radius:8px;padding:2px 10px;font-size:14px}
+.hardest-q-under{font-weight:700;color:#b45309;font-size:13px}
+.hardest-q-prompt{color:var(--ink);font-weight:600;line-height:1.4}
+.hardest-q-meta{margin-top:6px;color:var(--muted);font-size:12.5px}

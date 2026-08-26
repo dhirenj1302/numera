@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.48";
+const NUMERA_VERSION = "v2.49";
 const state = {
   files: [],
   sourceImages: [],
@@ -3398,6 +3398,63 @@ async function renderResults(){
   const complete=submissions.length;
   const avgO=complete?Math.round(submissions.reduce((a,s)=>a+s.original_score/s.total_questions*100,0)/complete):0;
   const avgM=complete?Math.round(submissions.reduce((a,s)=>a+s.mastery_score/s.total_questions*100,0)/complete):0;
+
+  // --- Find the questions the CLASS found hardest, using the same hint-depth
+  //     understanding model as the reports. For each question index, average the
+  //     first-attempt understanding across every child who did it; the lowest
+  //     scores are what the class struggled with most. This turns the dashboard
+  //     into a concrete "discuss these tomorrow" signal. ---
+  const HINT_CREDIT=[1.0,0.8,0.6,0.4,0.2];
+  const qUnderstanding=(a)=>{
+    const solved=a && (a.first_correct===true||a.first_correct===1||a.mastered===true||a.mastered===1);
+    if(!solved) return 0;
+    const usedHint=a.hint_used===true||a.hint_used===1;
+    if(!usedHint) return 1.0;
+    return HINT_CREDIT[Math.max(0,Math.min(4,Number(a.highest_hint_level)||0))];
+  };
+  const qAgg={}; // index -> {sum, n, struggled}
+  for(const s of submissions){
+    let atts=s.attempts;
+    if(!Array.isArray(atts)){ try{ atts=JSON.parse(s.attempts_json||"[]"); }catch{ atts=[]; } }
+    for(const a of (atts||[])){
+      if(!a || a.requires_teacher_review) continue;
+      const idx=Number(a.question_index);
+      if(!Number.isInteger(idx)) continue;
+      if(!qAgg[idx]) qAgg[idx]={sum:0,n:0,struggled:0};
+      const u=qUnderstanding(a);
+      qAgg[idx].sum+=u; qAgg[idx].n+=1;
+      if(u<1.0) qAgg[idx].struggled+=1; // needed a hint or didn't get it first time
+    }
+  }
+  const hardest=Object.entries(qAgg)
+    .map(([idx,v])=>({
+      index:Number(idx),
+      understanding:Math.round((v.sum/v.n)*100),
+      struggled:v.struggled,
+      n:v.n,
+      prompt:(state.homework.questions[Number(idx)]?.prompt)||`Question ${Number(idx)+1}`,
+      topic:(state.homework.questions[Number(idx)]?.topic)||""
+    }))
+    // Only surface genuinely hard ones (class understanding below 85, and more
+    // than one child affected where possible), hardest first.
+    .filter(q=>q.understanding<85)
+    .sort((a,b)=> a.understanding-b.understanding || b.struggled-a.struggled)
+    .slice(0,2);
+
+  const hardestCard = complete===0
+    ? `<div class="card"><h3>What to look for tomorrow</h3><p class="muted">Insights will appear here once children have completed this homework.</p></div>`
+    : hardest.length
+      ? `<div class="card hardest-card">
+          <h3>💡 Discuss with the class tomorrow</h3>
+          <p class="muted">The question${hardest.length>1?"s":""} the class found hardest — worth going over together:</p>
+          ${hardest.map(q=>`<div class="hardest-q">
+            <div class="hardest-q-head"><span class="hardest-q-num">Q${q.index+1}</span><span class="hardest-q-under">${q.understanding}% class understanding</span></div>
+            <div class="hardest-q-prompt">${esc(q.prompt)}</div>
+            <div class="hardest-q-meta">${q.struggled} of ${q.n} child${q.n===1?"":"ren"} needed help or got it wrong first time${q.topic?` · ${esc(q.topic)}`:""}</div>
+          </div>`).join("")}
+        </div>`
+      : `<div class="card"><h3>✅ A strong set of results</h3><p class="muted">No single question stood out as difficult for the class — most children worked through this well. Children scoring 100% first time may be ready for more challenge.</p></div>`;
+
   app.innerHTML=shell(`
     <div class="row between wrap"><div><h1>${esc(state.homework.title)}</h1><p class="muted">Teacher results dashboard</p></div><div class="row wrap"><button class="btn secondary" onclick="renderResults()">↻ Refresh</button><a class="btn secondary" href="#/edit-homework?id=${state.homework.id}">✏ Edit homework</a></div></div>
     ${resultsError?`<div class="notice"><strong>Results could not be loaded:</strong> ${esc(resultsError)}</div>`:""}
@@ -3408,7 +3465,7 @@ async function renderResults(){
     <div class="card" style="margin-top:14px">
       <div class="table-wrap"><table><thead><tr><th>Student</th><th>Original</th><th>Mastery</th><th>Action</th><th>Completed</th></tr></thead><tbody>${rows||`<tr><td colspan="5" class="empty">No submissions yet. Open the student link to complete the first homework.</td></tr>`}</tbody></table></div>
     </div>
-    <div class="card"><h3>What to look for tomorrow</h3><p class="muted">Prioritise children whose mastery score remains below 70%. Children scoring above 90% on their first attempt may need a greater challenge.</p></div>
+    ${hardestCard}
   `,true);
 }
 
