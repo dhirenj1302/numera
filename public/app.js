@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.54";
+const NUMERA_VERSION = "v2.55";
 const state = {
   files: [],
   sourceImages: [],
@@ -1433,7 +1433,11 @@ function renderReview(){
     <div class="review-instruction"><span>AI draft</span><strong>Tap a question to edit it</strong></div>
     <div id="questionEditors" class="question-editor-list">${qs}</div>
     <button class="btn secondary block" onclick="addQuestion()">＋ Add another question</button>
-    <button class="btn secondary block" style="margin-top:10px" onclick="document.getElementById('appendImageInput').click()">📷 Upload another image</button>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn secondary" style="flex:1" onclick="document.getElementById('appendCameraInput').click()">📷 Take a photo</button>
+      <button class="btn secondary" style="flex:1" onclick="document.getElementById('appendImageInput').click()">🖼️ Choose image</button>
+    </div>
+    <input type="file" id="appendCameraInput" accept="image/*" capture="environment" style="display:none" onchange="appendImageQuestions(this)">
     <input type="file" id="appendImageInput" accept="image/*" style="display:none" onchange="appendImageQuestions(this)">
     <div class="mobile-sticky-action review-publish">
       <button class="btn green block" onclick="publishHomework()">${state.editingHomeworkId?"Save changes":"Publish homework"}</button>
@@ -1728,11 +1732,12 @@ window.appendImageQuestions = async (input) => {
   input.value=""; // allow re-selecting the same file later
   if(!file) return;
   syncEditors(); // keep everything the teacher has already edited
-  const addBtn=document.getElementById("appendImageInput");
-  // Lightweight busy state on the action button.
-  const btn=document.querySelector('[onclick*="appendImageInput"]');
+  // Lightweight busy state — disable both upload buttons (camera + gallery) while reading.
+  const uploadBtns=[...document.querySelectorAll('[onclick*="appendCameraInput"],[onclick*="appendImageInput"]')];
+  const btn=uploadBtns[0];
   const label=btn?btn.textContent:"";
-  if(btn){ btn.disabled=true; btn.textContent="Reading the image with AI…"; }
+  uploadBtns.forEach(b=>{ b.disabled=true; });
+  if(btn){ btn.textContent="Reading the image with AI…"; }
   try{
     const shrunk=await imageToJpegDataURL(file); // reads + downscales/normalises like the main upload
     const result=await api("/api/extract",{method:"POST",body:JSON.stringify({images:[shrunk], setter_username:state.setterSession?.username||"", token:state.setterSession?.token||""}),timeoutMs:95000});
@@ -1754,7 +1759,8 @@ window.appendImageQuestions = async (input) => {
       if(el){ el.setAttribute("open",""); el.scrollIntoView({behavior:"smooth",block:"center"}); }
     },60);
   }catch(e){
-    if(btn){ btn.disabled=false; btn.textContent=label; }
+    uploadBtns.forEach(b=>{ b.disabled=false; });
+    if(btn){ btn.textContent=label; }
     alert(e.message||"That image could not be read. Please try again.");
   }
 };
