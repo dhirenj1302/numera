@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.56";
+const NUMERA_VERSION = "v2.57";
 const state = {
   files: [],
   sourceImages: [],
@@ -1468,10 +1468,11 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="coins" ${q.type==="coins"?"selected":""}>Coins (tap coins to make an amount)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
+      ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
       ${q.type==="multipart"?`<div class="multipart-editor"><div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
 
@@ -2154,6 +2155,110 @@ function sequenceCount(item){
   const parts=String(item?.answer??"").split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
   return Math.max(1,parts.length);
 }
+// ===== COINS ANSWER TYPE =====
+// UK coins, value in pence. The student taps coins to build up a set (each tap
+// increments that coin's count); marking compares the multiset they built to the
+// correct multiset. Used for "which coins give this change / make this amount".
+const COINS=[
+  {p:200,label:"£2"},{p:100,label:"£1"},{p:50,label:"50p"},{p:20,label:"20p"},
+  {p:10,label:"10p"},{p:5,label:"5p"},{p:2,label:"2p"},{p:1,label:"1p"}
+];
+const coinLabel=(p)=> p>=100 ? `£${(p/100).toFixed(p%100?2:0)}` : `${p}p`;
+// Parse an answer into a canonical {pence:count} map. Accepts flexible teacher
+// input: "50p x1, 10p x1, 2p", "50p, 10p, 2p", "50:1,10:1,2:1", "1x50p 1x10p".
+function parseCoinAnswer(ans){
+  const map={};
+  const s=String(ans||"").trim();
+  if(!s) return map;
+  // Split on commas or the word "and" or "+" between coin tokens.
+  const parts=s.split(/\s*(?:,|\band\b|\+)\s*/i).map(x=>x.trim()).filter(Boolean);
+  for(let part of parts){
+    // forms: "50p x2", "2x50p", "50p", "50:2", "£1 x3", "3 x £1"
+    let count=1, pence=null;
+    // count before (e.g. "2x50p" or "2 × 50p" or "3 x £1")
+    let m=part.match(/^(\d+)\s*[x×*]\s*(.+)$/i);
+    if(m){ count=parseInt(m[1],10); part=m[2].trim(); }
+    // count after (e.g. "50p x2" or "50p ×2")
+    m=part.match(/^(.+?)\s*[x×*]\s*(\d+)$/i);
+    if(m){ part=m[1].trim(); count=parseInt(m[2],10); }
+    // "50:2" colon form
+    m=part.match(/^(\d+)\s*:\s*(\d+)$/);
+    if(m){ pence=parseInt(m[1],10); count=parseInt(m[2],10); }
+    else {
+      // pence value: "50p", "£1", "£2", "5p"
+      let pm=part.match(/£\s*(\d+(?:\.\d+)?)/);
+      if(pm){ pence=Math.round(parseFloat(pm[1])*100); }
+      else { pm=part.match(/(\d+)\s*p/i); if(pm) pence=parseInt(pm[1],10); else { pm=part.match(/^(\d+)$/); if(pm) pence=parseInt(pm[1],10); } }
+    }
+    if(pence!=null && COINS.some(c=>c.p===pence) && count>0){
+      map[pence]=(map[pence]||0)+count;
+    }
+  }
+  return map;
+}
+const coinMapTotal=(map)=>Object.entries(map).reduce((a,[p,n])=>a+Number(p)*n,0);
+const coinMapCount=(map)=>Object.values(map).reduce((a,n)=>a+n,0);
+function coinMapToString(map){
+  return COINS.filter(c=>map[c.p]).map(c=>`${c.label}×${map[c.p]}`).join(", ");
+}
+// Student picker: a grid of tappable coins; each shows a ×N badge when selected.
+function coinsMarkup(q){
+  const target=coinMapTotal(parseCoinAnswer(q.answer));
+  const coinBtns=COINS.map(c=>`
+    <button type="button" class="coin-btn" data-pence="${c.p}" onclick="tapCoin(${c.p})" aria-label="Add a ${c.label} coin">
+      <span class="coin-face coin-${c.p}">${c.label}</span>
+      <span class="coin-count" id="coinCount_${c.p}" aria-hidden="true"></span>
+    </button>`).join("");
+  return `<div class="coins-answer" id="coinsAnswer" data-target="${target}">
+    <div class="coins-hint">Tap the coins you need. Tap again to add more; use − to remove.</div>
+    <div class="coins-grid">${coinBtns}</div>
+    <div class="coins-tally" id="coinsTally"><span class="coins-tally-empty">No coins chosen yet</span></div>
+    <button type="button" class="btn ghost coins-clear" onclick="clearCoins()">Clear all</button>
+  </div>`;
+}
+// Live state for the current question's coin selection lives in
+// state.interactiveAnswers[state.index] (an object {pence:count}), like the other
+// interactive types — so it persists across re-renders and resets per question.
+function currentCoins(){
+  const v=state.interactiveAnswers[state.index];
+  return (v && typeof v==="object") ? v : {};
+}
+window.tapCoin=(p)=>{ const m={...currentCoins()}; m[p]=(m[p]||0)+1; state.interactiveAnswers[state.index]=m; renderCoinState(); };
+window.removeCoin=(p)=>{ const m={...currentCoins()}; if(m[p]>0){ m[p]--; if(!m[p]) delete m[p]; } state.interactiveAnswers[state.index]=m; renderCoinState(); };
+window.clearCoins=()=>{ state.interactiveAnswers[state.index]={}; renderCoinState(); };
+function renderCoinState(){
+  const sel=currentCoins();
+  for(const c of COINS){
+    const badge=document.getElementById(`coinCount_${c.p}`);
+    const btn=document.querySelector(`.coin-btn[data-pence="${c.p}"]`);
+    if(badge){ badge.textContent=sel[c.p]?`×${sel[c.p]}`:""; }
+    if(btn){ btn.classList.toggle("coin-selected", !!sel[c.p]); }
+  }
+  const tally=document.getElementById("coinsTally");
+  if(tally){
+    const total=coinMapTotal(sel), n=coinMapCount(sel);
+    if(!n){ tally.innerHTML=`<span class="coins-tally-empty">No coins chosen yet</span>`; }
+    else {
+      const chips=COINS.filter(c=>sel[c.p]).map(c=>`<span class="coin-chip">${c.label} ×${sel[c.p]} <button type="button" onclick="removeCoin(${c.p})" aria-label="Remove one ${c.label}">−</button></span>`).join("");
+      tally.innerHTML=`<div class="coins-chips">${chips}</div><div class="coins-total">${n} coin${n===1?"":"s"} · ${coinLabel(total)}</div>`;
+    }
+  }
+}
+// Read the student's coin selection as a canonical map (or null if none chosen).
+function readCoinsAnswer(){
+  const sel=currentCoins();
+  if(!coinMapCount(sel)) return null;
+  return {...sel};
+}
+// Marking: the student's multiset must exactly match the correct multiset.
+function coinsIsCorrect(given,answer){
+  const want=parseCoinAnswer(answer);
+  const got=(given&&typeof given==="object")?given:parseCoinAnswer(given);
+  const keys=new Set([...Object.keys(want),...Object.keys(got)]);
+  for(const k of keys){ if((want[k]||0)!==(got[k]||0)) return false; }
+  return true;
+}
+
 function sequenceMarkup(idBase,item){
   const count=sequenceCount(item);
   // answer_unit may be a single unit ("cm") shown once at the end, OR a comma
@@ -2570,6 +2675,8 @@ function renderQuestion(){
                     ? angleMarkup(q)
                     : q.type==="sequence"
                       ? sequenceMarkup("seqInput",q)
+                    : q.type==="coins"
+                      ? coinsMarkup(q)
                     : q.type==="multipart"
         ? multipartMarkup(q)
         : isTimeQuestion(q)
@@ -2591,6 +2698,7 @@ function renderQuestion(){
     <button class="btn ghost block hint-entry-btn" onclick="showHint()">💡 Need a small clue?</button>
   `);
   if(q.type==="matching") setTimeout(drawMatchingLines,60);
+  if(q.type==="coins") setTimeout(renderCoinState,40);
   if(q.type==="drawing"){
     drawingState.strokes=[];
     drawingState.active=null;
@@ -2636,6 +2744,7 @@ function getStudentAnswer(q){
   if(q.type==="drag") return dragAnswer(q);
   if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
   if(q.type==="sequence") return readSequenceAnswer("seqInput",sequenceCount(q));
+  if(q.type==="coins") return readCoinsAnswer();
   if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("", timeNeedsMeridiem(q));
   const typed=($("#answerInput")?.value||"").trim();
@@ -2740,8 +2849,10 @@ function interactiveIsCorrect(q,given){
   if(q.type==="drag") return Number(given)===Number(q.answer);
   if(q.type==="angle") return Math.abs(Number(given)-Number(q.answer))<=Number(q.angle_tolerance||2);
   if(q.type==="fraction_visual") return normalise(given)===normalise(q.answer);
+  if(q.type==="coins") return coinsIsCorrect(given,q.answer);
   if(q.type==="shade") return shadeIsCorrect(given,q);
   if(q.type==="sequence") return sequenceIsCorrect(given,q.answer);
+  if(q.type==="coins") return coinsIsCorrect(given,q.answer);
   return isCorrect(given,q.answer);
 }
 // Shade a fraction of a grid. `given` is a JSON array of shaded cell indices.
@@ -2816,7 +2927,7 @@ window.refreshShadePreview=(i)=>{
 };
 window.checkAnswer=async()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null) return alert(q.type==="shade"?"Tap at least one square to shade first.":q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given===null) return alert(q.type==="shade"?"Tap at least one square to shade first.":q.type==="coins"?"Tap at least one coin first.":q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const parsed=JSON.parse(given);
@@ -2834,12 +2945,15 @@ window.checkAnswer=async()=>{
     return;
   }
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
+  // Coins answer is an object internally; store a readable canonical string so it
+  // displays cleanly and re-marks correctly (coinsIsCorrect parses either form).
+  const givenForStore = q.type==="coins" ? coinMapToString(given) : given;
   if(record.first_answer===null || record.first_answer===""){
-    record.first_answer=given;
-    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
+    record.first_answer=givenForStore;
+    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
-  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
+  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
   } else renderIncorrect();
