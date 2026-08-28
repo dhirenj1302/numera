@@ -82,6 +82,7 @@
   position:relative;
   display:inline-block;
   max-width:100%;
+  max-height:100%;
   line-height:0;
   user-select:none;
   touch-action:none;
@@ -89,12 +90,10 @@
 .crop-image-wrap>img{
   display:block;
   max-width:100%;
-  /* Was 58dvh, which — combined with a fixed preview panel and a two-row button
-     footer — pushed the bottom of tall worksheets off-screen with no way to
-     reach it. The preview and secondary actions are now collapsed by default
-     (see below), so the image can use much more of the viewport, and the stage
-     scrolls to reach the very bottom of the page. */
-  max-height:78dvh;
+  /* Fit the image within the STAGE area (the 1fr grid row), not the whole
+     viewport, so the header, instructions, preview and footer buttons never
+     overlap it. The stage scrolls if the image is still taller than the space. */
+  max-height:100%;
   width:auto;
   height:auto;
   object-fit:contain;
@@ -172,7 +171,6 @@
   .question-image-actions{grid-template-columns:auto auto;justify-content:start}
   .crop-more-grid{grid-template-columns:repeat(3,1fr)}
   .crop-more-grid .btn.danger{grid-column:auto}
-  .crop-image-wrap>img{max-height:74vh}
 }
 
 

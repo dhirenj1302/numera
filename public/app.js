@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.55";
+const NUMERA_VERSION = "v2.56";
 const state = {
   files: [],
   sourceImages: [],
@@ -1250,8 +1250,9 @@ window.saveCropEditor = async () => {
     q.needs_visual=true;
     q.visual_data_url=await exactVisualFromDataURL(source,bbox);
     closeCropEditor();
+    state.reviewOpenIndex=i; // reopen the question we were editing, not Q1
     renderReview();
-    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.setAttribute("open",""),0);
+    setTimeout(()=>document.querySelector(`[data-i="${i}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}),0);
   }catch(e){
     alert(e.message||"The image crop could not be saved.");
     document.querySelectorAll(".crop-editor-overlay .btn.primary").forEach(btn=>{btn.disabled=false;btn.textContent="Save";});
@@ -1414,6 +1415,10 @@ window.goSignInThenReview = () => {
 };
 function renderReview(){
   if (!state.draft) return location.hash="#/create";
+  // Which question should be expanded. Defaults to the first; set by actions
+  // (e.g. saving an image crop) so we reopen the question the teacher was on,
+  // rather than always snapping back to Q1.
+  if(typeof state.reviewOpenIndex!=="number") state.reviewOpenIndex=0;
   state.draft.questions=(state.draft.questions||[]).map(normaliseMultipartQuestion);
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   app.innerHTML = shell(`
@@ -1449,7 +1454,7 @@ function renderReview(){
   setTimeout(()=>{ (state.draft.questions||[]).forEach((q,i)=>{ if(q.type==="shade") refreshShadePreview(i); }); },0);
 }
 function questionEditor(q,i){
-  return `<details class="question-accordion" data-i="${i}" ${i===0?"open":""}>
+  return `<details class="question-accordion" data-i="${i}" ${i===state.reviewOpenIndex?"open":""}>
     <summary><span class="question-number">${i+1}</span><span class="summary-copy"><strong>${esc(q.prompt||"Untitled question")}</strong><small>${esc(q.topic||"Maths")} · ${q.type==="point"?"Point: "+esc(String(q.point_answer||q.answer||"Not set")):q.type==="matching"?"Interactive matching":`Answer: ${esc(String(q.answer||"Not set"))}`}</small></span><span class="chevron">⌄</span></summary>
     <div class="question-form">
       <div class="question-source-row"><span class="pill">${esc(q.source_label||`Page ${(q.page_index??0)+1}`)}</span>${q.needs_visual?`<span class="pill orange">Visual question</span>`:""}</div>
@@ -1647,8 +1652,12 @@ function syncEditors(){
       const isFraction=/^\s*-?\d+\s*\/\s*\d+\s*$/.test(String(q.answer||""));
       if(isFraction){ q.type="fraction"; }
       else {
-      const seqWording=/\b(next\s+numbers?|missing\s+numbers?|continue\s+the\s+(pattern|sequence)|number\s+(sequence|pattern|snake)|count(ing)?\s+(in|up|back|on)\b|fill\s+in\s+the\s+(sequence|pattern|numbers))\b/i.test(String(q.prompt||""));
-      const answerIsList=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.answer||""));
+      const seqWording=/\b(next\s+numbers?|missing\s+numbers?|continue\s+the\s+(pattern|sequence)|number\s+(sequence|pattern|snake)|count(ing)?\s+(in|up|back|on)\b|fill\s+in\s+the\s+(sequence|pattern|numbers)|(put|write|arrange|order|reorder|list)\b.*\b(order|ascending|descending|smallest|largest|size)\b)\b/i.test(String(q.prompt||""));
+      // A comma-separated list of numbers (integer OR decimal) is a sequence the
+      // pupil enters in order — e.g. "0.58, 0.85, 3.09" (ordering decimals). Using
+      // sequence avoids the multiple-choice comma-splitting ambiguity where each
+      // "choice" is itself a comma list.
+      const answerIsList=/^\s*-?\d+(\.\d+)?(\s*,\s*-?\d+(\.\d+)?){1,}\s*$/.test(String(q.answer||""));
       if(seqWording || answerIsList){ q.type="sequence"; }
       // Word answer: the correct answer contains alphabetic words a child cannot
       // type on a numeric keypad (e.g. "four thousand six hundred and two",
@@ -1661,6 +1670,15 @@ function syncEditors(){
         }
       }
       }
+    }
+    // Ordering question mis-shaped as multiple choice: the AI sometimes returns
+    // type=multiple_choice for a "put these in order" question, where the answer
+    // is itself a comma-list (e.g. "0.58, 0.85, 3.09, 3.11, 4.01") and each
+    // "choice" is a full ordering. Comma-splitting then breaks it. If the teacher
+    // hasn't chosen the type, treat a numeric comma-list answer as a sequence.
+    else if(!q.type_user_set && q.type==="multiple_choice"
+            && /^\s*-?\d+(\.\d+)?(\s*,\s*-?\d+(\.\d+)?){1,}\s*$/.test(String(q.answer||""))){
+      q.type="sequence";
     }
   });
   saveDraft();
@@ -1816,9 +1834,12 @@ window.publishHomework = async () => {
   if(badMc>=0){
     const q=state.draft.questions[badMc];
     const opts=(q.options||[]).map(o=>String(o).trim()).filter(Boolean);
+    const answerHasCommas=String(q.answer??"").includes(",");
     alert(
       opts.length<2
         ? `Question ${badMc+1} is set to multiple choice but has fewer than two answer choices. Add the choices (e.g. "12, 14, 16, 18") or change the answer type.`
+        : answerHasCommas
+        ? `Question ${badMc+1} looks like an ordering question (the answer is a list: "${String(q.answer).trim()}"). Change its answer type to "Number sequence" so the pupil enters each value in order — multiple choice can't tell the commas within an answer from the commas between choices.`
         : `Question ${badMc+1} is multiple choice but the correct answer isn't one of the choices. Add the correct answer to the list of choices.`
     );
     document.querySelector(`[data-i="${badMc}"]`)?.setAttribute("open","");
