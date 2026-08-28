@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.57";
+const NUMERA_VERSION = "v2.58";
 const state = {
   files: [],
   sourceImages: [],
@@ -154,6 +154,16 @@ const shell = (content, back=false) => {
   </header>
   <main>${content}</main>
   <div class="footer-note">Every mistake is a step forward.</div>
+  <footer class="site-footer">
+    <nav class="site-footer-links" aria-label="Legal">
+      <a href="#/terms">Terms &amp; Conditions</a>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <a href="#/privacy">Privacy Policy</a>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <a href="#/dpa">Data Processing Agreement</a>
+    </nav>
+    <div class="site-footer-legal">© ${new Date().getFullYear()} Verve Maths. All rights reserved. We collect the minimum information needed to run homework — no pupil emails, full names, dates of birth or advertising trackers.</div>
+  </footer>
 </div>`;
 };
 
@@ -248,6 +258,9 @@ function router() {
   if (path === "/play") return loadHomework(params.get("id"), params.get("preview")==="1"?"preview":"play");
   if (path === "/results") return loadHomework(params.get("id"), "results");
   if (path === "/owner") return renderOwnerDashboard();
+  if (path === "/terms") return renderLegalPage("terms");
+  if (path === "/privacy") return renderLegalPage("privacy");
+  if (path === "/dpa") return renderLegalPage("dpa");
   renderNotFound(path);
 }
 window.addEventListener("hashchange",()=>{
@@ -327,6 +340,57 @@ function renderNotFound(path){
       <p class="small muted">Route: ${esc(path||"/")}</p>
     </div>
   `,true);
+}
+
+function renderLegalPage(which){
+  const back = `<a class="btn ghost" href="#/" style="margin-bottom:12px;display:inline-block">← Back to home</a>`;
+  const updated = `<p class="muted small">Last updated: [to be added] · Draft for review — not yet finalised.</p>`;
+  let title, body;
+  if(which==="privacy"){
+    title="Privacy Policy";
+    body=`
+      ${updated}
+      <div class="legal-callout">
+        <strong>We collect as little as possible.</strong> Unlike many education apps, we do not collect pupils' full names, dates of birth, home addresses or photographs, and we use no advertising cookies, tracking pixels, session recording or social-media trackers. We do not sell data.
+      </div>
+      <h2>Who we are</h2>
+      <p>Verve Maths is a maths-homework tool for primary schools. A teacher photographs a maths worksheet; Verve Maths turns it into interactive homework that marks each answer and shows the teacher what the class understands. The service is provided by <strong>[legal entity — to be confirmed]</strong>.</p>
+      <p>When a school uses Verve Maths, the school is the data controller and Verve Maths is the data processor, processing on the school's instructions under the UK GDPR and the Data Protection Act 2018.</p>
+      <h2>The information we collect, and why</h2>
+      <p>From pupils: a first name (chosen by the teacher); a username; a 4-digit PIN (stored hashed, never in plain text); their answers to homework questions and whether they used hints. From teachers: a username, a display name and a hashed PIN. From worksheets: the photograph the teacher uploads and the questions read from it. We collect this solely to run the homework service.</p>
+      <p>We do not collect pupils' surnames, dates of birth, home addresses, contact details, device information, or behavioural usage analytics, and we collect no special-category or criminal-offence data.</p>
+      <h2>Who we share it with</h2>
+      <p>We do not sell personal information or use it for advertising. To run the service we use two suppliers who process data on our behalf under contract: <strong>Cloudflare</strong> (hosts the website and database) and <strong>OpenAI</strong> (reads the worksheet photograph into questions). Both may process data outside the UK, in which case an appropriate UK-recognised transfer safeguard applies.</p>
+      <h2>How long we keep it, and your rights</h2>
+      <p>We keep pupils' information only as long as the school needs the service and delete it on the school's request. Because the school is the controller, pupils and parents exercise their rights (access, correction, erasure and others under the UK GDPR) through the school, and Verve Maths helps the school respond. You may also complain to the Information Commissioner's Office at ico.org.uk.</p>
+      <h2>Contact</h2>
+      <p>For any question about how Verve Maths handles personal information, contact <strong>[privacy@vervemaths.co.uk — to be added]</strong>.</p>
+      <div class="legal-note">This on-page summary reflects our full Privacy Notice. The complete document is available on request and is being finalised with a data-protection professional.</div>
+    `;
+  } else if(which==="terms"){
+    title="Terms &amp; Conditions";
+    body=`
+      ${updated}
+      <p>These Terms will govern schools' and teachers' use of the Verve Maths service. They are being prepared and will be published here before the service is offered on a paid basis.</p>
+      <p>In summary, they will cover: who may use the service; acceptable use; that teachers must not upload pages containing pupils' personal information; intellectual property; availability and support; and how the agreement may end. Data protection is dealt with separately in our <a href="#/privacy">Privacy Policy</a> and <a href="#/dpa">Data Processing Agreement</a>.</p>
+      <div class="legal-note">Full Terms &amp; Conditions are in preparation. Contact us for the current draft.</div>
+    `;
+  } else {
+    title="Data Processing Agreement";
+    body=`
+      ${updated}
+      <p>Because a school is the data controller and Verve Maths is the data processor, we enter into a Data Processing Agreement (DPA) with each school. It sets out, in line with Article 28 of the UK GDPR, how Verve Maths processes personal data on the school's behalf — including security measures, our sub-processors (Cloudflare and OpenAI), international-transfer safeguards, breach notification, and deletion of data at the end of the service.</p>
+      <p>The DPA is a contract signed between the school and Verve Maths rather than a public web page. A copy is provided to each school as part of onboarding, and is available on request.</p>
+      <div class="legal-note">Our DPA template is being finalised with a data-protection professional. Contact us to receive a copy.</div>
+    `;
+  }
+  app.innerHTML = shell(`
+    <section class="legal-page">
+      ${back}
+      <h1>${title}</h1>
+      ${body}
+    </section>
+  `);
 }
 
 function renderLanding(){
