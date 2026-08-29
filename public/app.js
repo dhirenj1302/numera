@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.60";
+const NUMERA_VERSION = "v2.61";
 const state = {
   files: [],
   sourceImages: [],
@@ -1397,6 +1397,9 @@ async function extractHomework(){
       <p class="small muted">This normally takes 15–45 seconds. Keep this page open.</p>
     </div>
   `);
+  // Keep the page at the top so the teacher sees the worksheet image being
+  // scanned, rather than inheriting the previous screen's scroll position.
+  window.scrollTo(0,0);
   try {
     const images=[];
     for (let i=0;i<state.files.length;i++){

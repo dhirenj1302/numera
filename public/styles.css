@@ -44,6 +44,8 @@
   display:grid;
   grid-template-rows:auto auto minmax(0,1fr) auto auto;
   height:100dvh;
+  max-height:100dvh;
+  overflow:hidden;
   max-width:900px;
   margin:0 auto;
   background:#11152e;
@@ -80,20 +82,21 @@
 }
 .crop-image-wrap{
   position:relative;
+  /* The wrap must hug the image EXACTLY (no letterbox space), because the green
+     selection box is positioned in % of the wrap. If the wrap were larger than
+     the image, the box would drift off the content. So the wrap sizes to the
+     image, and we cap the IMAGE's height at the stage instead. */
   display:inline-block;
-  max-width:100%;
-  max-height:100%;
   line-height:0;
   user-select:none;
   touch-action:none;
 }
 .crop-image-wrap>img{
   display:block;
+  /* Cap by the stage's height (the 1fr row) and the container width, keeping
+     aspect ratio. The wrap shrinks to match, so % coordinates stay accurate. */
   max-width:100%;
-  /* Fit the image within the STAGE area (the 1fr grid row), not the whole
-     viewport, so the header, instructions, preview and footer buttons never
-     overlap it. The stage scrolls if the image is still taller than the space. */
-  max-height:100%;
+  max-height:calc(100dvh - 260px);
   width:auto;
   height:auto;
   object-fit:contain;
@@ -151,6 +154,8 @@
   gap:8px;
   padding:10px 12px calc(10px + env(safe-area-inset-bottom));
   background:#fff;
+  max-height:40dvh;
+  overflow-y:auto;
 }
 .crop-editor-actions .btn{min-height:46px}
 .crop-editor-actions .btn.block{width:100%}
