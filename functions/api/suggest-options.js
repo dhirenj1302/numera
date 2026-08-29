@@ -60,6 +60,15 @@ export async function onRequestPost(context) {
       `CRITICAL: preserve the exact notation, units and currency of the question as written (for example ` +
       `keep a comma decimal separator if the question uses one, keep the currency symbol used, keep the ` +
       `units). Do not convert or normalise notation. Keep every option in the same format as the answer.\n` +
+      `IMPORTANT - combination questions: if the question presents a FIXED SET of specific items or values ` +
+      `(for example boxes labelled 6kg, 4kg, 5kg, 2kg, or a list of given numbers) and asks which of them ` +
+      `combine to meet a condition (which add up to a total, which pair sums to X, which two make Y), then ` +
+      `EVERY option - the correct answer and all distractors - MUST be built ONLY from the items actually ` +
+      `presented in the question. Never invent a value that is not among the presented items. For example, ` +
+      `if the boxes are 6kg, 4kg, 5kg and 2kg and the answer is '4kg and 2kg', a distractor like '5kg and 1kg' ` +
+      `is FORBIDDEN because there is no 1kg box; use only real combinations such as '6kg and 2kg' or '5kg and 4kg'. ` +
+      `The distractors should be plausible WRONG combinations of the presented items (ones that do not meet the ` +
+      `condition, or a common miscount), so the child is genuinely tested on identifying the right combination.\n` +
       `Return shuffled_options as the correct answer and the distractors together in a natural order.`;
 
     const response = await fetch("https://api.openai.com/v1/responses", {
