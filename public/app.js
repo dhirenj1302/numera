@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.59";
+const NUMERA_VERSION = "v2.60";
 const state = {
   files: [],
   sourceImages: [],
@@ -161,6 +161,8 @@ const shell = (content, back=false) => {
       <a href="#/privacy">Privacy Policy</a>
       <span class="site-footer-sep" aria-hidden="true">·</span>
       <a href="#/dpa">Data Processing Agreement</a>
+      <span class="site-footer-sep" aria-hidden="true">·</span>
+      <a href="#/contact">Contact Us</a>
     </nav>
     <div class="site-footer-legal">© ${new Date().getFullYear()} Verve Maths. All rights reserved. We collect the minimum information needed to run homework — no pupil emails, full names, dates of birth or advertising trackers.</div>
   </footer>
@@ -261,6 +263,7 @@ function router() {
   if (path === "/terms") return renderLegalPage("terms");
   if (path === "/privacy") return renderLegalPage("privacy");
   if (path === "/dpa") return renderLegalPage("dpa");
+  if (path === "/contact") return renderContactPage();
   renderNotFound(path);
 }
 window.addEventListener("hashchange",()=>{
@@ -340,6 +343,30 @@ function renderNotFound(path){
       <p class="small muted">Route: ${esc(path||"/")}</p>
     </div>
   `,true);
+}
+
+function renderContactPage(){
+  const email="admin@vervemaths.com";
+  app.innerHTML = shell(`
+    <section class="legal-page contact-page">
+      <a class="btn ghost" href="#/" style="margin-bottom:12px;display:inline-block">← Back to home</a>
+      <h1>Contact us</h1>
+      <p>We'd love to hear from you. Whether you're a teacher trying Verve Maths, a school with a question about how it works, or you'd like to talk about a pilot, get in touch and a real person will reply.</p>
+      <div class="contact-card">
+        <div class="contact-label">Email us at</div>
+        <a class="contact-email" href="mailto:${email}">${email}</a>
+        <a class="btn green block" style="margin-top:14px" href="mailto:${email}?subject=Verve%20Maths%20enquiry">Send us an email</a>
+      </div>
+      <h2>What to get in touch about</h2>
+      <ul class="contact-list">
+        <li><strong>Trying it with your class</strong> — questions about setting homework or reading your results.</li>
+        <li><strong>Data protection &amp; privacy</strong> — how we handle pupils' information (see our <a href="#/privacy">Privacy Policy</a>).</li>
+        <li><strong>Running a pilot at your school</strong> — we're working with a small number of schools and happy to talk.</li>
+        <li><strong>Anything that isn't working</strong> — tell us what happened and we'll look into it.</li>
+      </ul>
+      <p class="contact-note">We aim to reply within a couple of working days. Verve Maths is a small team, so thank you for your patience.</p>
+    </section>
+  `);
 }
 
 function renderLegalPage(which){
