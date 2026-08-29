@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.58";
+const NUMERA_VERSION = "v2.59";
 const state = {
   files: [],
   sourceImages: [],
@@ -926,11 +926,16 @@ async function loadHomeworkForEditing(id){
       `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
     );
     state.editingHomeworkId=homework.id;state.reusedFromTitle="";
+    // Questions loaded for editing were already reviewed and published once, so
+    // treat them as teacher-confirmed. Otherwise the publish/save gate would force
+    // the teacher to re-tick every visual/multi-step "I've checked this" box just
+    // to save a small edit (the bug where "Save changes" appeared to do nothing).
+    const editedQuestions=normaliseHomeworkQuestions(homework).questions.map(q=>({...q,teacher_confirmed:true}));
     state.draft={
       title:homework.title,
       topic:homework.topic,
       year_group:homework.year_group,
-      questions:normaliseHomeworkQuestions(homework).questions,
+      questions:editedQuestions,
       warning:"",
       page_count:Number(homework.settings?.source_pages)||0
     };
