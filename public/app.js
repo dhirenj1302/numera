@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.61";
+const NUMERA_VERSION = "v2.62";
 const state = {
   files: [],
   sourceImages: [],
@@ -952,7 +952,7 @@ async function loadHomeworkForEditing(id){
     const homework=await api(
       `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
     );
-    state.editingHomeworkId=homework.id;state.reusedFromTitle="";
+    state.editingHomeworkId=homework.id;state.reusedFromTitle="";state.loadedForEditing=true;
     // Questions loaded for editing were already reviewed and published once, so
     // treat them as teacher-confirmed. Otherwise the publish/save gate would force
     // the teacher to re-tick every visual/multi-step "I've checked this" box just
@@ -1002,7 +1002,7 @@ async function loadHomeworkForReuse(id){
       `/api/homeworks?id=${encodeURIComponent(id)}&setter_username=${encodeURIComponent(session.username)}&setter_token=${encodeURIComponent(session.token)}`
     );
     // New homework, not an edit of the old one.
-    state.editingHomeworkId=null;
+    state.editingHomeworkId=null;state.loadedForEditing=false;
     state.reusedFromTitle=homework.title||"";
     state.draft={
       title:suggestReuseTitle(homework.title),
@@ -1039,7 +1039,7 @@ function suggestReuseTitle(title){
 
 window.renderUpload = () => renderUpload();
 function renderUpload(){
-  state.editingHomeworkId=null;state.reusedFromTitle="";
+  state.editingHomeworkId=null;state.reusedFromTitle="";state.loadedForEditing=false;
   state.files = [];
   state.sourceImages = [];
   app.innerHTML = shell(`
@@ -1236,6 +1236,7 @@ window.openCropEditor = i => {
           <img src="${source}" alt="Original worksheet page">
           <div class="crop-dim crop-dim-all"></div>
           <div class="crop-selection" role="application" aria-label="Selected image area">
+            <span class="crop-handle crop-handle-move" aria-hidden="true"></span>
             <span class="crop-handle crop-handle-se" aria-hidden="true"></span>
           </div>
         </div>
@@ -1271,8 +1272,10 @@ window.closeCropEditor = () => {
 
 function startCropPointer(e){
   e.preventDefault();
-  const isHandle=e.target.classList.contains("crop-handle");
-  cropEditor.mode=isHandle?"resize":"move";
+  // Only the bottom-right (SE) handle resizes. The top-left move-square and the
+  // box body both move. This matches the visual: square = move, circle = resize.
+  const isResize=e.target.classList.contains("crop-handle-se");
+  cropEditor.mode=isResize?"resize":"move";
   cropEditor.pointerStart={x:e.clientX,y:e.clientY};
   cropEditor.startBox={...cropEditor.box};
   e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -1520,11 +1523,12 @@ function renderReview(){
   if(typeof state.reviewOpenIndex!=="number") state.reviewOpenIndex=0;
   state.draft.questions=(state.draft.questions||[]).map(normaliseMultipartQuestion);
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
+  const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
     <section class="mobile-page-head">
-      <span class="step-chip">${state.editingHomeworkId?"Editing published homework":"Step 3 of 3"}</span>
-      <h1>${state.editingHomeworkId?"Edit homework questions":"Check the questions"}</h1>
-      <p class="muted">${state.editingHomeworkId
+      <span class="step-chip">${isEditing?"Editing published homework":"Step 3 of 3"}</span>
+      <h1>${isEditing?"Edit homework questions":"Check the questions"}</h1>
+      <p class="muted">${isEditing
         ? `Open each question one by one, make any changes, then save the homework.`
         : `Verve found ${state.draft.questions.length} question${state.draft.questions.length===1?"":"s"}. Open each card to check its wording and answer.`}</p>
     </section>
@@ -1544,8 +1548,8 @@ function renderReview(){
     <input type="file" id="appendCameraInput" accept="image/*" capture="environment" style="display:none" onchange="appendImageQuestions(this)">
     <input type="file" id="appendImageInput" accept="image/*" style="display:none" onchange="appendImageQuestions(this)">
     <div class="mobile-sticky-action review-publish">
-      <button class="btn green block" onclick="publishHomework()">${state.editingHomeworkId?"Save changes":"Publish homework"}</button>
-      <span class="small muted">${state.editingHomeworkId?"Changes update this homework without changing its student link":"You can change anything before publishing"}</span>
+      <button class="btn green block" onclick="publishHomework()">${isEditing?"Save changes":"Publish homework"}</button>
+      <span class="small muted">${isEditing?"Changes update this homework without changing its student link":"You can change anything before publishing"}</span>
     </div>
   `, true);
   // Initial render of any shade-question previews so the teacher sees the grid
@@ -1918,6 +1922,12 @@ async function recordCorrections(homeworkId){
 
 window.publishHomework = async () => {
   syncEditors();
+  // Re-derive whether this is an edit of an existing (already-published) homework
+  // directly from state at click time, rather than trusting a flag that other
+  // navigation paths can clear. If we hold a homework id we're loaded from, this
+  // is an edit/save; otherwise it's a first publish. This makes the button's
+  // action reliable even if the label briefly rendered the other way.
+  const editId = state.editingHomeworkId || (state.homework && state.homework.id && state.loadedForEditing ? state.homework.id : null);
   const title=(state.draft.title||$("#title")?.value||"").trim() || "Year 4 Maths";
   const topic=(state.draft.topic||$("#topic")?.value||"").trim() || "Mixed maths";
   if (!state.draft.questions.length) return alert("Add at least one question.");
@@ -1968,7 +1978,7 @@ window.publishHomework = async () => {
   }
 
   const button=document.querySelector(".review-publish .btn");
-  if(button){button.disabled=true;button.textContent=state.editingHomeworkId?"Saving…":"Publishing…";}
+  if(button){button.disabled=true;button.textContent=editId?"Saving…":"Publishing…";}
   try {
     const payload={
       setter_username:state.setterSession?.username||null,
@@ -1980,13 +1990,13 @@ window.publishHomework = async () => {
     const payloadBytes=new Blob([JSON.stringify(payload)]).size;
     if(payloadBytes>4_500_000) throw new Error("This homework is too large to publish because it contains several detailed images. Remove unnecessary visual questions or publish fewer pages at once.");
     let result;
-    if(state.editingHomeworkId){
+    if(editId){
       result=await api("/api/homeworks",{
         method:"PUT",
-        body:JSON.stringify({...payload,id:state.editingHomeworkId})
+        body:JSON.stringify({...payload,id:editId})
       });
       state.homework={...result,title,topic,questions:state.draft.questions};
-      const savedId=state.editingHomeworkId;
+      const savedId=editId;
       state.editingHomeworkId=null;
       clearDraft();
       alert("Homework changes saved.");

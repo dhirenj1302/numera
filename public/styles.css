@@ -135,6 +135,21 @@
   touch-action:none;
 }
 .crop-handle-se{right:-16px;bottom:-16px;cursor:nwse-resize}
+/* Move handle: a SQUARE at the top-left, visually distinct from the round resize
+   handle, so it's clear you move from the square and resize from the circle. */
+.crop-handle-move{
+  left:-16px;top:-16px;
+  border-radius:6px;
+  background:#52e0a0;
+  cursor:move;
+}
+.crop-handle-move:after{
+  content:"";
+  position:absolute;
+  inset:7px;
+  border-radius:2px;
+  border:2px solid rgba(17,21,46,.55);
+}
 .crop-preview-panel{
   border-top:1px solid rgba(255,255,255,.1);
   background:#151a3a;
