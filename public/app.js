@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.62";
+const NUMERA_VERSION = "v2.64";
 const state = {
   files: [],
   sourceImages: [],
@@ -351,11 +351,14 @@ function renderContactPage(){
     <section class="legal-page contact-page">
       <a class="btn ghost" href="#/" style="margin-bottom:12px;display:inline-block">← Back to home</a>
       <h1>Contact us</h1>
-      <p>We'd love to hear from you. Whether you're a teacher trying Verve Maths, a school with a question about how it works, or you'd like to talk about a pilot, get in touch and a real person will reply.</p>
-      <div class="contact-card">
-        <div class="contact-label">Email us at</div>
-        <a class="contact-email" href="mailto:${email}">${email}</a>
-        <a class="btn green block" style="margin-top:14px" href="mailto:${email}?subject=Verve%20Maths%20enquiry">Send us an email</a>
+      <p>We'd love to hear from you. Whether you're a teacher trying Verve Maths, a school with a question about how it works, or you'd like to talk about a pilot, fill in the form below and a real person will reply.</p>
+      <div class="contact-form">
+        <div class="field"><label for="cfName">Your name</label><input id="cfName" type="text" placeholder="e.g. Jane Bailey"></div>
+        <div class="field"><label for="cfEmail">Your email</label><input id="cfEmail" type="email" placeholder="you@school.sch.uk"></div>
+        <div class="field"><label for="cfSubject">Subject</label><input id="cfSubject" type="text" placeholder="What's it about?"></div>
+        <div class="field"><label for="cfMessage">Message</label><textarea id="cfMessage" rows="5" placeholder="How can we help?"></textarea></div>
+        <button class="btn green block" type="button" onclick="sendContactMessage()">Send message</button>
+        <p class="contact-note">This opens your email app with your message ready to send to ${email}. We aim to reply within a couple of working days.</p>
       </div>
       <h2>What to get in touch about</h2>
       <ul class="contact-list">
@@ -364,10 +367,25 @@ function renderContactPage(){
         <li><strong>Running a pilot at your school</strong> — we're working with a small number of schools and happy to talk.</li>
         <li><strong>Anything that isn't working</strong> — tell us what happened and we'll look into it.</li>
       </ul>
-      <p class="contact-note">We aim to reply within a couple of working days. Verve Maths is a small team, so thank you for your patience.</p>
     </section>
   `);
+  window.scrollTo(0,0);
 }
+
+window.sendContactMessage = () => {
+  const email="admin@vervemaths.com";
+  const name=(document.getElementById("cfName")?.value||"").trim();
+  const from=(document.getElementById("cfEmail")?.value||"").trim();
+  const subject=(document.getElementById("cfSubject")?.value||"").trim();
+  const message=(document.getElementById("cfMessage")?.value||"").trim();
+  if(!name || !from || !message){
+    alert("Please add your name, your email and a message so we can reply.");
+    return;
+  }
+  const subjectLine=subject ? `Verve Maths: ${subject}` : "Verve Maths enquiry";
+  const body=`Name: ${name}\nEmail: ${from}\n\n${message}`;
+  window.location.href=`mailto:${email}?subject=${encodeURIComponent(subjectLine)}&body=${encodeURIComponent(body)}`;
+};
 
 function renderLegalPage(which){
   const back = `<a class="btn ghost" href="#/" style="margin-bottom:12px;display:inline-block">← Back to home</a>`;
@@ -391,7 +409,7 @@ function renderLegalPage(which){
       <h2>How long we keep it, and your rights</h2>
       <p>We keep pupils' information only as long as the school needs the service and delete it on the school's request. Because the school is the controller, pupils and parents exercise their rights (access, correction, erasure and others under the UK GDPR) through the school, and Verve Maths helps the school respond. You may also complain to the Information Commissioner's Office at ico.org.uk.</p>
       <h2>Contact</h2>
-      <p>For any question about how Verve Maths handles personal information, contact <strong>[privacy@vervemaths.co.uk — to be added]</strong>.</p>
+      <p>For any question about how Verve Maths handles personal information, contact us at <a href="mailto:admin@vervemaths.com">admin@vervemaths.com</a>.</p>
       <div class="legal-note">This on-page summary reflects our full Privacy Notice. The complete document is available on request and is being finalised with a data-protection professional.</div>
     `;
   } else if(which==="terms"){
@@ -408,7 +426,7 @@ function renderLegalPage(which){
       ${updated}
       <p>Because a school is the data controller and Verve Maths is the data processor, we enter into a Data Processing Agreement (DPA) with each school. It sets out, in line with Article 28 of the UK GDPR, how Verve Maths processes personal data on the school's behalf — including security measures, our sub-processors (Cloudflare and OpenAI), international-transfer safeguards, breach notification, and deletion of data at the end of the service.</p>
       <p>The DPA is a contract signed between the school and Verve Maths rather than a public web page. A copy is provided to each school as part of onboarding, and is available on request.</p>
-      <div class="legal-note">Our DPA template is being finalised with a data-protection professional. Contact us to receive a copy.</div>
+      <div class="legal-note">Our DPA template is being finalised with a data-protection professional. <a href="#/contact">Contact us</a> to receive a copy.</div>
     `;
   }
   app.innerHTML = shell(`
@@ -418,6 +436,7 @@ function renderLegalPage(which){
       ${body}
     </section>
   `);
+  window.scrollTo(0,0);
 }
 
 function renderLanding(){

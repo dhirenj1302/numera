@@ -769,3 +769,10 @@
 .contact-list{margin:10px 0 0;padding-left:20px}
 .contact-list li{margin-bottom:8px;line-height:1.5}
 .contact-note{margin-top:16px;font-size:13.5px;color:var(--muted)}
+
+/* ===== Contact form (v2.63) ===== */
+.contact-form{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin:18px 0}
+.contact-form .field{margin-bottom:12px}
+.contact-form label{display:block;font-weight:700;color:var(--ink);margin-bottom:5px;font-size:14px}
+.contact-form input,.contact-form textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:15px;box-sizing:border-box}
+.contact-form textarea{resize:vertical;min-height:96px}
