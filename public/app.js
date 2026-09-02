@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.68";
+const NUMERA_VERSION = "v2.70";
 const state = {
   files: [],
   sourceImages: [],
@@ -348,7 +348,9 @@ function router() {
   if (path === "/contact") return renderContactPage();
   renderNotFound(path);
 }
+let suppressNextHashRoute=false;
 window.addEventListener("hashchange",()=>{
+  if(suppressNextHashRoute){ suppressNextHashRoute=false; return; }
   rememberRoute(currentRoute());
   router();
 });
@@ -1625,6 +1627,13 @@ window.goSignInThenReview = () => {
 };
 function renderReview(){
   if (!state.draft) return location.hash="#/create";
+  // Keep the URL at #/review while on this page, so a pull-to-refresh reloads
+  // back to review (where the draft is restored) rather than to a stale route.
+  // Update the hash WITHOUT triggering the router (which would re-enter here).
+  if(location.hash!=="#/review"){
+    suppressNextHashRoute=true;
+    location.hash="#/review";
+  }
   // Which question should be expanded. Defaults to the first; set by actions
   // (e.g. saving an image crop) so we reopen the question the teacher was on,
   // rather than always snapping back to Q1.
@@ -3888,4 +3897,35 @@ function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt
 function js(v=""){return String(v).replaceAll("\\","\\\\").replaceAll("'","\\'");}
 function formatMath(v=""){return esc(v).replace(/\n/g,"<br>");}
 
-router();
+// App startup. If a draft was in progress when the page was reloaded / pull-to-
+// refreshed, restore the FULL draft (with images from IndexedDB) and land on the
+// review page — regardless of what hash the reload produced. The review page is
+// often rendered without a #/review hash, so we can't rely on the route to
+// trigger restore; we restore here at startup instead.
+async function bootstrap(){
+  const hadDraft = !!state.draft; // light copy restored synchronously from localStorage
+  if(hadDraft){
+    try{
+      const stored=await idbLoadDraft();
+      if(stored && stored.draft){
+        const sameDraft = stored.draft.title===state.draft.title &&
+          (stored.draft.questions||[]).length===(state.draft.questions||[]).length;
+        if(sameDraft){
+          state.draft=stored.draft;
+          state.sourceImages=stored.sourceImages||[];
+          if(stored.editingHomeworkId!==undefined) state.editingHomeworkId=stored.editingHomeworkId;
+          if(stored.loadedForEditing!==undefined) state.loadedForEditing=stored.loadedForEditing;
+        }
+      }
+    }catch(e){ /* best-effort — keep the light localStorage draft */ }
+    // If signed in with a draft in progress, resume on the review page rather than
+    // whatever route the reload produced (which often loses the draft).
+    const draftFriendly = !location.hash || /^#\/(review|create)?$/.test(location.hash);
+    if(state.setterSession && draftFriendly && location.hash!=="#/review"){
+      location.hash="#/review"; // hashchange -> router -> enterReview restores + renders
+      return;
+    }
+  }
+  router();
+}
+bootstrap();
