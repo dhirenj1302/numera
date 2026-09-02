@@ -180,15 +180,27 @@ async function create(context){
       INSERT INTO submissions
         (id,homework_id,student_name,student_username,original_score,
          mastery_score,total_questions,attempts_json,strengths_json,
-         needs_practice_json)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
+         needs_practice_json,gems_earned)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
     `).bind(
       id,body.homework_id,String(body.student_name||"").trim(),username,
       Number(body.original_score)||0,Number(body.mastery_score)||0,
       Math.max(1,Number(body.total_questions)||1),
       JSON.stringify(attempts),JSON.stringify(body.strengths||[]),
-      JSON.stringify(body.needs_practice||[])
+      JSON.stringify(body.needs_practice||[]),
+      Math.max(0,Number(body.gems_earned)||0)
     ).run();
+
+    // The student's accumulated gem total = sum of gems across ALL their
+    // submissions (device-independent, since it lives server-side). Include the
+    // one just inserted.
+    let gemsTotal=0;
+    try{
+      const row=await context.env.DB.prepare(
+        `SELECT COALESCE(SUM(gems_earned),0) AS total FROM submissions WHERE student_username=?`
+      ).bind(username).first();
+      gemsTotal=Number(row?.total)||0;
+    }catch(e){ gemsTotal=Math.max(0,Number(body.gems_earned)||0); }
 
     try{
       await updateUnderstanding(context,{
@@ -199,11 +211,12 @@ async function create(context){
       console.error("Understanding update failed",understandingError);
       return json({
         id,saved:true,understanding_updated:false,
-        understanding_error:understandingError.message
+        understanding_error:understandingError.message,
+        gems_total:gemsTotal
       });
     }
 
-    return json({id,saved:true,understanding_updated:true});
+    return json({id,saved:true,understanding_updated:true,gems_total:gemsTotal});
   }catch(error){
     return json({error:error.message||"The result could not be saved."},{status:500});
   }
