@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.71";
+const NUMERA_VERSION = "v2.72";
 const state = {
   files: [],
   sourceImages: [],
@@ -3453,7 +3453,8 @@ async function finishHomework(){
       total_questions:scoreTotal,
       attempts:safeAttempts,
       strengths,
-      needs_practice:needs
+      needs_practice:needs,
+      gems_earned:computeGemsEarned(safeAttempts)
     },
     summary:{original,mastery,scoreTotal,strengths,needs,teacherReviewCount,insight}
   };
@@ -3484,7 +3485,7 @@ async function savePendingSubmission(){
     localStorage.removeItem("numera:pendingSubmission");
     const s=state.pendingSubmission.summary;
     state.pendingSubmission=null;
-    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id,s.insight);
+    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,result.id,s.insight,result.gems_total);
     if(result.understanding_updated===false){
       console.warn("Result saved, but understanding graph update failed:",result.understanding_error);
     }
@@ -3606,12 +3607,16 @@ function addGems(n){
   return total;
 }
 
-function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null){
+function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null,serverGemsTotal=null){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
-  // Award gems for this homework (once), from the real attempts, and read the
-  // running total so the child sees their collection grow.
+  // Award gems for this homework (once), from the real attempts. The running
+  // TOTAL now comes from the server (sum across all the student's submissions),
+  // so it accumulates across sessions and devices. Falls back to the local
+  // running total only if the server didn't return one (offline/older API).
   const gemsEarned = insight ? computeGemsEarned(state.pendingSummaryAttempts||[]) : 0;
-  const gemsTotal = gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal();
+  const gemsTotal = (serverGemsTotal!=null && Number.isFinite(Number(serverGemsTotal)))
+    ? Number(serverGemsTotal)
+    : (gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal());
   app.innerHTML=shell(`
     <div class="mission">
       <div class="confetti">🎉 ⭐ 🎉</div><h1>Great work, ${esc(state.studentName)}!</h1>
