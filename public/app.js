@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.67";
+const NUMERA_VERSION = "v2.68";
 const state = {
   files: [],
   sourceImages: [],
@@ -92,27 +92,36 @@ async function idbClearDraft(){
     await new Promise((res)=>{ const tx=db.transaction(NUMERA_IDB_STORE,"readwrite"); tx.objectStore(NUMERA_IDB_STORE).delete("current"); tx.oncomplete=res; tx.onerror=res; });
   }catch(e){ /* best-effort */ }
 }
-// On load, hydrate the full draft (with images) from IndexedDB if the light
-// localStorage copy is missing images. Called early during app start.
-async function hydrateDraftFromIDB(){
-  if(!state.draft) return; // nothing in progress
-  const needsImages=(state.draft.questions||[]).some(q=>q.visual_pending && !q.visual_data_url);
-  if(!needsImages && state.sourceImages.length) return;
-  const stored=await idbLoadDraft();
-  if(stored && stored.draft){
-    // Only restore if it's the same draft (same question count + title) to avoid
-    // pulling a stale draft over a different one.
-    const sameDraft = stored.draft.title===state.draft.title &&
-      (stored.draft.questions||[]).length===(state.draft.questions||[]).length;
-    if(sameDraft){
-      state.draft=stored.draft;
-      state.sourceImages=stored.sourceImages||[];
-      if(stored.editingHomeworkId!==undefined) state.editingHomeworkId=stored.editingHomeworkId;
-      if(stored.loadedForEditing!==undefined) state.loadedForEditing=stored.loadedForEditing;
-      // Re-render the review page if that's where we are, now with images.
-      if(location.hash.startsWith("#/review")) renderReview();
+// Entering the review page: if the in-memory draft is missing its images (e.g.
+// after a page refresh, where only the light localStorage copy survived), pull
+// the FULL draft (questions + images + source photos) back from IndexedDB first,
+// THEN render. This makes refresh-restore reliable rather than a fire-and-forget
+// re-render race.
+async function enterReview(){
+  try{
+    const inMemoryHasImages=(state.draft?.questions||[]).some(q=>q.visual_data_url) || (state.sourceImages||[]).length>0;
+    const inMemoryNeedsImages=(state.draft?.questions||[]).some(q=>q.visual_pending && !q.visual_data_url);
+    if(!state.draft || inMemoryNeedsImages || !inMemoryHasImages){
+      const stored=await idbLoadDraft();
+      if(stored && stored.draft){
+        // If there's no in-memory draft at all (hard refresh), just restore it.
+        // If there is one, only overwrite when it's the same draft (title +
+        // question count) so we never clobber a different in-progress draft.
+        const noCurrent=!state.draft;
+        const sameDraft = state.draft &&
+          stored.draft.title===state.draft.title &&
+          (stored.draft.questions||[]).length===(state.draft.questions||[]).length;
+        if(noCurrent || sameDraft){
+          state.draft=stored.draft;
+          state.sourceImages=stored.sourceImages||[];
+          if(stored.editingHomeworkId!==undefined) state.editingHomeworkId=stored.editingHomeworkId;
+          if(stored.loadedForEditing!==undefined) state.loadedForEditing=stored.loadedForEditing;
+        }
+      }
     }
-  }
+  }catch(e){ /* best-effort; fall through to render whatever we have */ }
+  if(!state.draft) return location.hash="#/create";
+  renderReview();
 }
 
 const cropEditor = {
@@ -328,7 +337,7 @@ function router() {
   if (path === "/edit-homework") return loadHomeworkForEditing(params.get("id"));
   if (path === "/reuse-homework") return loadHomeworkForReuse(params.get("id"));
   if (path === "/create") return renderUpload();
-  if (path === "/review") return renderReview();
+  if (path === "/review") return enterReview();
   if (path === "/published") return renderPublished();
   if (path === "/play") return loadHomework(params.get("id"), params.get("preview")==="1"?"preview":"play");
   if (path === "/results") return loadHomework(params.get("id"), "results");
@@ -3880,6 +3889,3 @@ function js(v=""){return String(v).replaceAll("\\","\\\\").replaceAll("'","\\'")
 function formatMath(v=""){return esc(v).replace(/\n/g,"<br>");}
 
 router();
-// After the initial synchronous render, pull the full draft (with images) back
-// from IndexedDB if a refresh happened mid-editing, so images/questions survive.
-hydrateDraftFromIDB();
