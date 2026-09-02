@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.66";
+const NUMERA_VERSION = "v2.67";
 const state = {
   files: [],
   sourceImages: [],
@@ -987,10 +987,17 @@ window.showReviewPanel=name=>{
   ["Students","Homeworks","Insights"].forEach(n=>$("#review"+n)?.classList.toggle("hidden",n.toLowerCase()!==name));
 };
 
+function greetingForNow(){
+  const h=new Date().getHours(); // the teacher's local hour
+  if(h<12) return "Good morning";
+  if(h<18) return "Good afternoon";
+  return "Good evening";
+}
+
 function renderTeacher(){
   if(!state.setterSession)return location.hash="#/teacher-signin";
   app.innerHTML = shell(`
-    <h1>Good evening 👋</h1>
+    <h1>${greetingForNow()} 👋</h1>
     <p class="muted">Create the next maths homework for your students.</p>
     <div class="grid" style="margin-top:22px">
       <button class="action-card" onclick="location.hash='#/create'">
