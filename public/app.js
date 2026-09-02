@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.70";
+const NUMERA_VERSION = "v2.71";
 const state = {
   files: [],
   sourceImages: [],
@@ -1067,7 +1067,7 @@ async function loadHomeworkForEditing(id){
     // treat them as teacher-confirmed. Otherwise the publish/save gate would force
     // the teacher to re-tick every visual/multi-step "I've checked this" box just
     // to save a small edit (the bug where "Save changes" appeared to do nothing).
-    const editedQuestions=normaliseHomeworkQuestions(homework).questions.map(q=>({...q,teacher_confirmed:true}));
+    const editedQuestions=normaliseHomeworkQuestions(homework).questions.map(q=>{reconcileAnswerWithWorking(q);return {...q,teacher_confirmed:true};});
     state.draft={
       title:homework.title,
       topic:homework.topic,
@@ -1530,6 +1530,13 @@ async function extractHomework(){
     if (!state.draft.questions?.length) throw new Error("No readable questions were found. Retake the photo closer to the page.");
     status[1]?.classList.remove("active"); status[2]?.classList.add("active");
     state.draft=await attachQuestionVisuals(state.draft);
+    // Deterministically reconcile each numeric answer against its own working.
+    // The AI sometimes shows a correct calculation but stores a different number
+    // in the answer field (e.g. working "400 - 85 = 315" but answer "335"). We
+    // recompute the working's final step in JS (never wrong) and, if it disagrees
+    // with the stored answer, trust the recomputed value. This is a code check,
+    // not a prompt instruction, so it doesn't depend on the AI being careful.
+    (state.draft.questions||[]).forEach(q=>reconcileAnswerWithWorking(q));
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -1553,6 +1560,51 @@ function multipartMarkerCount(text=""){
     || String(text).match(/\([a-f]\)/gi)
     || [];
   return new Set(markers.map(x=>x.toLowerCase().replace(/[^a-f]/g,""))).size;
+}
+
+// Deterministically reconcile a numeric answer against its working. Only touches
+// plain number answers with a working string. Strategy:
+//  1) Find the LAST "= <number>" in the working — that's the working's own final
+//     result. If it differs from the stored answer, the working's result wins
+//     (the working is where the reasoning is shown; the answer field is where the
+//     slip usually happens).
+//  2) Where the final step is a simple binary op (a + b, a - b, a × b, a ÷ b),
+//     recompute it in JS and use that — so even if the working's stated result is
+//     itself mis-added, the true arithmetic wins.
+// Conservative: if nothing parses cleanly, leave the answer unchanged. These
+// questions are also flagged requires_teacher_check, so a human still confirms.
+function reconcileAnswerWithWorking(q){
+  try{
+    if(!q || q.type!=="number") return;
+    const working=String(q.answer_working||"");
+    if(!working) return;
+    const norm=working.replace(/[×xX]/g,"*").replace(/[÷]/g,"/").replace(/[−–—]/g,"-").replace(/,/g,"");
+    // The working's own final result is the LAST "= <number>" in the string —
+    // this is the conclusion the teacher sees (e.g. "... = 315."). Trust it over
+    // the answer field, which is where the AI's slip usually is.
+    const eqs=[...norm.matchAll(/=\s*(-?\d+(?:\.\d+)?)/g)];
+    if(!eqs.length) return;
+    let target=parseFloat(eqs[eqs.length-1][1]);
+    // If the final step is a clean "a op b = result" AND our recomputation of a op
+    // b disagrees with the stated result, trust the recomputation (covers a stated
+    // result that is itself mis-added). We ONLY look at the operation immediately
+    // before the final "=", to avoid picking up earlier/intermediate steps.
+    const finalStep=norm.match(/(-?\d+(?:\.\d+)?)\s*([-+*/])\s*(-?\d+(?:\.\d+)?)\s*=\s*-?\d+(?:\.\d+)?\s*\.?\s*$/);
+    if(finalStep){
+      const a=parseFloat(finalStep[1]), op=finalStep[2], b=parseFloat(finalStep[3]);
+      if(Number.isFinite(a)&&Number.isFinite(b)){
+        const c = op==="+"?a+b : op==="-"?a-b : op==="*"?a*b : (b!==0?a/b:null);
+        if(c!=null && Number.isFinite(c)) target=c;
+      }
+    }
+    if(!Number.isFinite(target)) return;
+    const targetStr = String(Number.isInteger(target)?target:parseFloat(target.toFixed(4)));
+    const current = String(q.answer??"").trim();
+    if(/^-?\d+(\.\d+)?$/.test(current) && current!==targetStr){
+      q.answer=targetStr;
+      q._answer_reconciled=true;
+    }
+  }catch(e){ /* leave answer unchanged on any parse issue */ }
 }
 
 function normaliseMultipartQuestion(q){
@@ -2206,6 +2258,7 @@ function renderPublished(){
 // worksheets better). Only shows real numbers; silent if unavailable.
 async function showImpactLoop(){
   const el=$("#impactLoop");
+  window.scrollTo(0,0);
   if(!el || !state.setterSession?.username || !state.setterSession?.token) return;
   try{
     const r=await api(`/api/corrections?setter_username=${encodeURIComponent(state.setterSession.username)}&token=${encodeURIComponent(state.setterSession.token)}`);
