@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.65";
+const NUMERA_VERSION = "v2.66";
 const state = {
   files: [],
   sourceImages: [],
@@ -30,16 +30,89 @@ const state = {
 function saveDraft(){
   try{
     if(state.draft){
-      localStorage.setItem("numera:draft", JSON.stringify(state.draft));
+      // Save a LIGHT copy (no heavy base64 images) to localStorage synchronously,
+      // so question text/types/answers/options always survive a refresh even when
+      // the full draft with images is too big for localStorage. Images are saved
+      // separately to IndexedDB (large quota) below.
+      const light={
+        ...state.draft,
+        questions:(state.draft.questions||[]).map(q=>({...q, visual_data_url:"", visual_pending:!!(q.visual_data_url||q.needs_visual)}))
+      };
+      localStorage.setItem("numera:draft", JSON.stringify(light));
       if(state.editingHomeworkId) localStorage.setItem("numera:editingHomeworkId", state.editingHomeworkId);
       else localStorage.removeItem("numera:editingHomeworkId");
+      // Full draft + source images -> IndexedDB (async, best-effort), so a refresh
+      // can restore the actual images too.
+      idbSaveDraft({draft:state.draft, sourceImages:state.sourceImages, editingHomeworkId:state.editingHomeworkId, loadedForEditing:state.loadedForEditing});
     }
-  }catch(e){ /* quota exceeded (large images) — refresh-restore just won't be available */ }
+  }catch(e){ /* localStorage full — IndexedDB copy below still carries the images */ }
 }
 function clearDraft(){
   state.draft=null;
   localStorage.removeItem("numera:draft");
   localStorage.removeItem("numera:editingHomeworkId");
+  idbClearDraft();
+}
+
+// --- IndexedDB draft store (holds the full draft incl. base64 images) ---
+const NUMERA_IDB="numera-drafts", NUMERA_IDB_STORE="draft";
+function idbOpen(){
+  return new Promise((resolve,reject)=>{
+    try{
+      const req=indexedDB.open(NUMERA_IDB,1);
+      req.onupgradeneeded=()=>{ req.result.createObjectStore(NUMERA_IDB_STORE); };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    }catch(e){ reject(e); }
+  });
+}
+async function idbSaveDraft(payload){
+  try{
+    const db=await idbOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(NUMERA_IDB_STORE,"readwrite");
+      tx.objectStore(NUMERA_IDB_STORE).put(payload,"current");
+      tx.oncomplete=res; tx.onerror=()=>rej(tx.error);
+    });
+  }catch(e){ /* best-effort */ }
+}
+async function idbLoadDraft(){
+  try{
+    const db=await idbOpen();
+    return await new Promise((res,rej)=>{
+      const tx=db.transaction(NUMERA_IDB_STORE,"readonly");
+      const r=tx.objectStore(NUMERA_IDB_STORE).get("current");
+      r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error);
+    });
+  }catch(e){ return null; }
+}
+async function idbClearDraft(){
+  try{
+    const db=await idbOpen();
+    await new Promise((res)=>{ const tx=db.transaction(NUMERA_IDB_STORE,"readwrite"); tx.objectStore(NUMERA_IDB_STORE).delete("current"); tx.oncomplete=res; tx.onerror=res; });
+  }catch(e){ /* best-effort */ }
+}
+// On load, hydrate the full draft (with images) from IndexedDB if the light
+// localStorage copy is missing images. Called early during app start.
+async function hydrateDraftFromIDB(){
+  if(!state.draft) return; // nothing in progress
+  const needsImages=(state.draft.questions||[]).some(q=>q.visual_pending && !q.visual_data_url);
+  if(!needsImages && state.sourceImages.length) return;
+  const stored=await idbLoadDraft();
+  if(stored && stored.draft){
+    // Only restore if it's the same draft (same question count + title) to avoid
+    // pulling a stale draft over a different one.
+    const sameDraft = stored.draft.title===state.draft.title &&
+      (stored.draft.questions||[]).length===(state.draft.questions||[]).length;
+    if(sameDraft){
+      state.draft=stored.draft;
+      state.sourceImages=stored.sourceImages||[];
+      if(stored.editingHomeworkId!==undefined) state.editingHomeworkId=stored.editingHomeworkId;
+      if(stored.loadedForEditing!==undefined) state.loadedForEditing=stored.loadedForEditing;
+      // Re-render the review page if that's where we are, now with images.
+      if(location.hash.startsWith("#/review")) renderReview();
+    }
+  }
 }
 
 const cropEditor = {
@@ -1574,6 +1647,21 @@ function renderReview(){
   // Initial render of any shade-question previews so the teacher sees the grid
   // and the divisibility check immediately, not only after editing a field.
   setTimeout(()=>{ (state.draft.questions||[]).forEach((q,i)=>{ if(q.type==="shade") refreshShadePreview(i); }); },0);
+  // Auto-suggest answer options for any multiple-choice question that has no
+  // distractors yet (e.g. a letter/Roman-numeral answer that was just converted
+  // to MC, or after a refresh). This surfaces the suggested options without the
+  // teacher having to find and tap "Suggest answers". Runs once per question,
+  // best-effort, staggered so several don't fire at once.
+  setTimeout(()=>{
+    (state.draft.questions||[]).forEach((q,i)=>{
+      const opts=(q.options||[]).map(o=>String(o).trim()).filter(Boolean);
+      const needsOptions = q.type==="multiple_choice" && opts.length<2 && String(q.answer||"").trim() && !q._autoSuggested;
+      if(needsOptions){
+        q._autoSuggested=true; // don't re-trigger on every render
+        setTimeout(()=>{ try{ suggestOptions(i); }catch(e){} }, 200 + i*400);
+      }
+    });
+  },0);
 }
 function questionEditor(q,i){
   return `<details class="question-accordion" data-i="${i}" ${i===state.reviewOpenIndex?"open":""}>
@@ -1782,11 +1870,12 @@ function syncEditors(){
       // "choice" is itself a comma list.
       const answerIsList=/^\s*-?\d+(\.\d+)?(\s*,\s*-?\d+(\.\d+)?){1,}\s*$/.test(String(q.answer||""));
       if(seqWording || answerIsList){ q.type="sequence"; }
-      // Word answer: the correct answer contains alphabetic words a child cannot
-      // type on a numeric keypad (e.g. "four thousand six hundred and two",
-      // "hexagon"). Default to multiple choice. A units label like "cm" in
-      // answer_unit doesn't count — only letters IN the answer itself.
-      else if(/[a-z]{3,}/i.test(String(q.answer||"")) && !/^\s*(teacher review)?\s*$/i.test(String(q.answer||""))){
+      // Letter answer: the correct answer contains ANY alphabetic character the
+      // child cannot type on a numeric keypad — words ("hexagon", "four thousand"),
+      // Roman numerals ("XCV", "IV", "XL"), or any letter-based answer. Default to
+      // multiple choice so the child picks rather than types. Only letters IN the
+      // answer count; a units label in answer_unit doesn't.
+      else if(/[a-z]/i.test(String(q.answer||"")) && !/^\s*(teacher review)?\s*$/i.test(String(q.answer||""))){
         q.type="multiple_choice";
         if(!(q.options||[]).filter(o=>String(o).trim()).length){
           q.options=[String(q.answer).trim()]; // seed with the correct answer; teacher/AI add distractors
@@ -3784,3 +3873,6 @@ function js(v=""){return String(v).replaceAll("\\","\\\\").replaceAll("'","\\'")
 function formatMath(v=""){return esc(v).replace(/\n/g,"<br>");}
 
 router();
+// After the initial synchronous render, pull the full draft (with images) back
+// from IndexedDB if a refresh happened mid-editing, so images/questions survive.
+hydrateDraftFromIDB();
