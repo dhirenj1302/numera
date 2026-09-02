@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.64";
+const NUMERA_VERSION = "v2.65";
 const state = {
   files: [],
   sourceImages: [],
@@ -2017,9 +2017,14 @@ window.publishHomework = async () => {
       state.homework={...result,title,topic,questions:state.draft.questions};
       const savedId=editId;
       state.editingHomeworkId=null;
+      state.loadedForEditing=false;
+      localStorage.setItem("numera:lastHomework",savedId);
       clearDraft();
-      alert("Homework changes saved.");
-      location.hash=`#/edit-homework?id=${savedId}`;
+      state.justEdited=true;
+      // Go to the published/share screen (same as a new homework) so the teacher
+      // can re-send the link to parents. The homework keeps its existing student
+      // link, so re-sharing is valid — edits don't change the link.
+      location.hash="#/published";
     }else{
       result=await api("/api/homeworks",{method:"POST",body:JSON.stringify(payload)});
       state.homework={...result,title,topic,questions:state.draft.questions};
@@ -2058,11 +2063,12 @@ function renderPublished(){
   const nameParam=titleSlug?`&name=${titleSlug}`:"";
   const student=`${location.origin}${location.pathname}#/play?id=${h.id}${nameParam}`;
   const results=`${location.origin}${location.pathname}#/results?id=${h.id}${nameParam}`;
+  const wasEdit=state.justEdited; state.justEdited=false;
   app.innerHTML=shell(`
     <div class="mission">
-      <div class="confetti">🎉 ✨ 🎉</div>
-      <h1>Homework is ready!</h1>
-      <p class="muted">${esc(h.title)}</p>
+      <div class="confetti">${wasEdit?"✅":"🎉 ✨ 🎉"}</div>
+      <h1>${wasEdit?"Changes saved!":"Homework is ready!"}</h1>
+      <p class="muted">${esc(h.title)}${wasEdit?" — the student link is unchanged":""}</p>
     </div>
     <div id="impactLoop"></div>
     <div class="card">
