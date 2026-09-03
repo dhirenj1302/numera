@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.72";
+const NUMERA_VERSION = "v2.73";
 const state = {
   files: [],
   sourceImages: [],
@@ -441,8 +441,9 @@ function renderContactPage(){
         <div class="field"><label for="cfEmail">Your email</label><input id="cfEmail" type="email" placeholder="you@school.sch.uk"></div>
         <div class="field"><label for="cfSubject">Subject</label><input id="cfSubject" type="text" placeholder="What's it about?"></div>
         <div class="field"><label for="cfMessage">Message</label><textarea id="cfMessage" rows="5" placeholder="How can we help?"></textarea></div>
-        <button class="btn green block" type="button" onclick="sendContactMessage()">Send message</button>
-        <p class="contact-note">This opens your email app with your message ready to send to ${email}. We aim to reply within a couple of working days.</p>
+        <button id="cfSend" class="btn green block" type="button" onclick="sendContactMessage()">Send message</button>
+        <p id="cfStatus" class="contact-status" role="status" aria-live="polite"></p>
+        <p class="contact-note">Your message goes straight to us at ${email}. We aim to reply within a couple of working days.</p>
       </div>
       <h2>What to get in touch about</h2>
       <ul class="contact-list">
@@ -456,19 +457,37 @@ function renderContactPage(){
   window.scrollTo(0,0);
 }
 
-window.sendContactMessage = () => {
-  const email="admin@vervemaths.com";
+window.sendContactMessage = async () => {
   const name=(document.getElementById("cfName")?.value||"").trim();
   const from=(document.getElementById("cfEmail")?.value||"").trim();
   const subject=(document.getElementById("cfSubject")?.value||"").trim();
   const message=(document.getElementById("cfMessage")?.value||"").trim();
+  const btn=document.getElementById("cfSend");
+  const status=document.getElementById("cfStatus");
+  const setStatus=(text,kind)=>{ if(status){ status.textContent=text; status.className="contact-status"+(kind?` ${kind}`:""); } };
+
   if(!name || !from || !message){
-    alert("Please add your name, your email and a message so we can reply.");
+    setStatus("Please add your name, your email and a message so we can reply.","error");
     return;
   }
-  const subjectLine=subject ? `Verve Maths: ${subject}` : "Verve Maths enquiry";
-  const body=`Name: ${name}\nEmail: ${from}\n\n${message}`;
-  window.location.href=`mailto:${email}?subject=${encodeURIComponent(subjectLine)}&body=${encodeURIComponent(body)}`;
+
+  if(btn){ btn.disabled=true; btn.textContent="Sending…"; }
+  setStatus("Sending your message…","");
+
+  try{
+    await api("/api/contact",{
+      method:"POST",
+      body:JSON.stringify({name,email:from,subject,message}),
+      timeoutMs:20000
+    });
+    // Success: confirm inline and clear the form so it can't be sent twice.
+    ["cfName","cfEmail","cfSubject","cfMessage"].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=""; });
+    setStatus("Thanks — your message has been sent. We'll reply within a couple of working days.","success");
+    if(btn){ btn.textContent="Message sent ✓"; }
+  }catch(e){
+    setStatus((e && e.message) ? e.message : "Something went wrong sending your message. Please try again.","error");
+    if(btn){ btn.disabled=false; btn.textContent="Send message"; }
+  }
 };
 
 function renderLegalPage(which){
