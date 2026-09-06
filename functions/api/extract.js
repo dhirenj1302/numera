@@ -392,6 +392,97 @@ function reconcileMoney(question){
   return question;
 }
 
+// ---------------------------------------------------------------------------
+// Un-typeable fraction inside a multipart part.
+//
+// Multipart parts can only be number / time / multiple_choice, and the pupil UI
+// renders a part as a plain typed box (or time/sequence) — there is NO fraction
+// input and NO option list for a part. So if a part's answer is a slash-fraction
+// "n/d", the child is shown a number box with no "/" key and literally cannot
+// answer it. (The screenshot case: "write as a decimal fraction" mis-stored as
+// "4/10".) The decimal-fraction prompt rule (1c) fixes the common cause, but as a
+// safety net we DETECT any remaining n/d part answer, force teacher review, and
+// warn — rather than silently converting to a type the part UI can't render.
+// Returns a warning string if it flagged something, else "".
+// ---------------------------------------------------------------------------
+const SLASH_FRACTION = /^\s*-?\d+\s*\/\s*\d+\s*$/;
+
+// ---------------------------------------------------------------------------
+// Answer vs working reconciliation (the "11 × 11 = 110" class of bug).
+//
+// The model sometimes writes a correct multi-step working ("10×11=110; 1×11=11;
+// 110+11=121") but stores an INTERMEDIATE value (110) in the answer field instead
+// of the final result (121). The hints/feedback are right; only the answer field
+// is wrong, so a pupil who answers correctly is marked wrong.
+//
+// Fix deterministically: the FINAL result of a working is, by construction, the
+// number immediately AFTER THE LAST "=" sign ("… 110 + 11 = 121" -> 121). If that
+// value is a clean number and it disagrees with the stored answer, correct the
+// answer and flag for teacher review. Deliberately conservative:
+//   - only plain number answers (never fraction/time/coins/MC/sequence/…);
+//   - skip money (unit £/p) — reconcileMoney owns that;
+//   - both stored answer and derived value must be clean plain numbers;
+//   - if we can't read a final value confidently, leave everything untouched.
+// Returns a warning string if it corrected something, else "".
+// ---------------------------------------------------------------------------
+const PLAIN_NUMBER = /^\s*-?\d+(?:\.\d+)?\s*$/;
+
+/** The number immediately after the last "=" in the working, or null. */
+function finalValueAfterLastEquals(working){
+  if(!working) return null;
+  const s = String(working).replace(/\u00d7/g, "x"); // normalise the × glyph
+  const matches = [...s.matchAll(/=\s*(-?\d+(?:\.\d+)?)/g)];
+  if(!matches.length) return null;
+  return matches[matches.length - 1][1];
+}
+
+function reconcileAnswerToWorking(question){
+  if(!question || typeof question !== "object") return "";
+
+  // Only plain typed-number answers.
+  const type = question.type || "number";
+  if(type !== "number" && type !== "") return "";
+
+  // Money is handled by reconcileMoney — don't double-process (pence vs pounds
+  // would confuse this integer comparison).
+  const unitRaw = String(question.answer_unit || "").trim();
+  if(unitRaw === "£" || unitRaw === "p" || /^(gbp|pence)$/i.test(unitRaw)) return "";
+
+  const stored = String(question.answer ?? "").trim();
+  if(!PLAIN_NUMBER.test(stored)) return ""; // non-numeric answer -> leave alone
+
+  const derivedRaw = finalValueAfterLastEquals(question.answer_working);
+  if(derivedRaw === null) return "";           // no equation to trust
+  if(!PLAIN_NUMBER.test(derivedRaw)) return "";
+
+  // Compare numerically so "110" vs "110.0" don't count as a difference.
+  const storedNum  = Number(stored);
+  const derivedNum = Number(derivedRaw);
+  if(!Number.isFinite(storedNum) || !Number.isFinite(derivedNum)) return "";
+  if(storedNum === derivedNum) return "";      // already agree -> nothing to do
+
+  // They disagree and the working gives a clean final value: trust the working.
+  const before = question.answer;
+  question.answer = derivedRaw.trim();
+  question.requires_teacher_check = true;
+  question._answer_reconciled = true;
+  return `answer "${before}" disagreed with the working (which ends "= ${derivedRaw.trim()}") — corrected to "${derivedRaw.trim()}", please confirm`;
+}
+
+function flagUntypeableFractionParts(question){
+  if(!question || question.type !== "multipart" || !Array.isArray(question.parts)) return "";
+  const bad = [];
+  for(const p of question.parts){
+    const type = p.type || "number";
+    if((type === "number" || type === "") && SLASH_FRACTION.test(String(p.answer || ""))){
+      bad.push(`${p.label || "?"} (answer "${String(p.answer).trim()}")`);
+    }
+  }
+  if(!bad.length) return "";
+  question.requires_teacher_check = true;
+  return `part ${bad.join(", ")} has a fraction answer a pupil can't type on the number pad — reword it to ask for a decimal, or edit the answer`;
+}
+
 async function extractPage(context,imageUrl,pageIndex,correctionMemory=""){
   const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.${correctionMemory}
 
@@ -400,6 +491,7 @@ Your first duty is faithful transcription. Read ONLY this page. Do not infer que
 For every complete visible question:
 1. Preserve the actual wording, numbers, mathematical symbols, units, labels and printed answer choices.
 1a. FRACTIONS AS "n/d". Whenever a fraction appears anywhere — in the question wording OR in an answer — write it in plain "numerator/denominator" form using a forward slash, e.g. write one-half as "1/2", three-quarters as "3/4", seven-ninths as "7/9". Never use unicode fraction glyphs (½, ¾), never stack it, never write "1 over 2". This reads correctly when the question is spoken aloud.
+1c. "DECIMAL FRACTION" MEANS A DECIMAL. In UK primary maths, "decimal fraction" is the term for a fraction written as a DECIMAL NUMBER, not as n/d. So if a question says "write as a decimal fraction", "give your answer as a decimal", "write the shaded part as a decimal fraction", or similar, the ANSWER MUST BE A DECIMAL and type=number. Examples: shaded part 4/10 -> answer "0.4" (NOT "4/10"); 6/10 -> "0.6"; 3/100 -> "0.03"; 1/2 -> "0.5". Do NOT store "4/10" as the answer and do NOT use type=fraction for these — the pupil enters a decimal on the number pad. Only treat an answer as a common fraction (rule 9e, type=fraction) when the question actually wants n/d form (e.g. "write as a fraction in its simplest form"), NOT when it asks for a decimal fraction.
 1b. MINUS SIGN, NOT HYPHEN. When the image shows a subtraction or negative sign, transcribe it as a real minus sign "−" (U+2212), not a hyphen "-". For example "7 − 5" and "−3", using "−". This ensures it is read aloud as "minus" rather than a dash. (Ranges or hyphenated words that are genuinely hyphens stay as hyphens; only mathematical minus/subtraction becomes "−".)
 2. Solve it and provide the correct answer.
 3. Create exactly four progressive hint tiers in the hints array:
@@ -522,6 +614,14 @@ export async function onRequestPost(context){
             warnings.push(`Page ${i+1}: a multi-part question needs teacher correction because ${question.repair_warning}`);
           }
           reconcileMoney(question);
+          const answerWarn = reconcileAnswerToWorking(question);
+          if(answerWarn){
+            warnings.push(`Page ${i+1}: ${answerWarn}`);
+          }
+          const fracWarn = flagUntypeableFractionParts(question);
+          if(fracWarn){
+            warnings.push(`Page ${i+1}: ${fracWarn}`);
+          }
           allQuestions.push({
             ...question,
             page_index:i,
