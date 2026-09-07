@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.79";
+const NUMERA_VERSION = "v2.80";
 const state = {
   files: [],
   sourceImages: [],
@@ -1555,7 +1555,7 @@ async function extractHomework(){
     // recompute the working's final step in JS (never wrong) and, if it disagrees
     // with the stored answer, trust the recomputed value. This is a code check,
     // not a prompt instruction, so it doesn't depend on the AI being careful.
-    (state.draft.questions||[]).forEach(q=>reconcileAnswerWithWorking(q));
+    (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);});
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -1666,6 +1666,53 @@ function reconcileAnswerWithWorking(q){
   }catch(e){ /* leave answer unchanged on any parse issue */ }
 }
 
+// Frontend twin of the backend reconcileCoins: fix a coins answer whose number of
+// coins doesn't match the question ("which THREE coins = 57p" stored as 5 coins).
+// Runs on every render so existing coin questions get corrected on load. Only
+// lifts a set the AI already wrote in its working/feedback/hints; never invents.
+const COIN_VALUES_FE={"1p":1,"2p":2,"5p":5,"10p":10,"20p":20,"50p":50,"£1":100,"£2":200};
+function parseCoinListFE(str){
+  const out=[]; const re=/(£2|£1|50p|20p|10p|5p|2p|1p)(?:\s*[×x]\s*(\d+))?/gi; let m;
+  while((m=re.exec(String(str)))){
+    const key=Object.keys(COIN_VALUES_FE).find(k=>k.toLowerCase()===m[1].toLowerCase());
+    const n=m[2]?parseInt(m[2],10):1; for(let i=0;i<n;i++) out.push(key);
+  }
+  return out;
+}
+function reconcileCoinsFE(q){
+  try{
+    if(!q || q.type!=="coins") return;
+    const words={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8};
+    const pm=String(q.prompt||"").toLowerCase().match(/\b(one|two|three|four|five|six|seven|eight|\d+)\s+coins?\b/);
+    if(!pm) return;
+    const need = (words[pm[1]]!==undefined)?words[pm[1]]:(parseInt(pm[1],10)||null);
+    if(!need) return;
+    const p=String(q.prompt||"");
+    let target=null;
+    const gbp=p.match(/£\s*(\d+(?:\.\d{1,2})?)/); const pen=p.match(/(\d+)\s*p\b/);
+    if(gbp) target=Math.round(parseFloat(gbp[1])*100); else if(pen) target=parseInt(pen[1],10);
+    if(target===null) return;
+    const sum=list=>list.reduce((s,c)=>s+(COIN_VALUES_FE[c]||0),0);
+    const cur=parseCoinListFE(q.answer);
+    if(cur.length===need && sum(cur)===target) return;   // already valid
+    const sources=[q.answer_working,q.explanation,...(Array.isArray(q.hints)?q.hints:[])];
+    for(const s of sources){
+      const chunks=String(s||"").split(/[.;:]|\bbut\b|\bso\b|\btry\b|\bcould be\b|\binstead\b/i);
+      for(const ch of chunks){
+        const coins=parseCoinListFE(ch);
+        if(coins.length===need && sum(coins)===target){
+          const corrected=coins.join(", ");
+          if(String(q.answer||"").replace(/\s/g,"")!==corrected.replace(/\s/g,"")){
+            q.answer=corrected; q.requires_teacher_check=true; q._coins_reconciled=true;
+          }
+          return;
+        }
+      }
+    }
+    q.requires_teacher_check=true;   // couldn't verify — leave for teacher
+  }catch(e){ /* leave unchanged on any parse issue */ }
+}
+
 function normaliseMultipartQuestion(q){
   q.parts=Array.isArray(q.parts)?q.parts:[];
   // A unit conversion like "98mm = _ cm _ mm" is sometimes mislabelled as
@@ -1753,7 +1800,7 @@ function renderReview(){
   // Reconcile every question's answer against its working on each render — this
   // guarantees the money (pence↔pounds) and answer/working fixes apply even to
   // questions created before this version, the moment the editor shows them.
-  (state.draft.questions||[]).forEach(q=>reconcileAnswerWithWorking(q));
+  (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);});
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
