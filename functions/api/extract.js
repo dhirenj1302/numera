@@ -330,23 +330,30 @@ function penceToPoundsStr(pence){
  * Returns an integer number of pence, or null if we can't be confident.
  */
 function finalPenceFromWorking(working){
-  if(!working) return null;
-  // Look only at the tail so we get the FINAL result, not an intermediate step.
-  const tail = String(working).slice(-60);
-
-  // A working often ends "= 140p or £1.12" where the pence value is the direct
-  // arithmetic result and the pounds value is the model's (sometimes wrong)
-  // conversion. So trust a PENCE token over a pounds one: take the LAST pence
-  // token if any exist, otherwise fall back to the last pounds token.
-  const penceTokens  = [...tail.matchAll(/(\d+(?:\.\d+)?)\s*p\b/gi)];
-  if(penceTokens.length){
-    return Math.round(parseFloat(penceTokens[penceTokens.length - 1][1]));
-  }
-  const poundTokens = [...tail.matchAll(/£\s*(\d+(?:\.\d{1,2})?)/g)];
-  if(poundTokens.length){
-    return Math.round(parseFloat(poundTokens[poundTokens.length - 1][1]) * 100);
-  }
+  // Kept for the answer/working reconciler's money-skip path and any callers.
+  // Returns an integer number of pence, or null.
+  const m = moneyFromWorking(working);
+  if(m.pence !== null) return m.pence;
+  if(m.poundsStr !== null) return Math.round(parseFloat(m.poundsStr) * 100);
   return null;
+}
+
+// Scan the WHOLE working (not just the tail — the pounds figure or pence value
+// can appear anywhere) and return the best pounds and pence readings we can find.
+//   poundsStr: last explicit "£X.XX" as a 2dp string, or null
+//   pence:     last "<n> pence" / "<n>p" integer, or null
+// We prefer an explicit £ figure when re-expressing a pounds answer, because the
+// model writes the correct conversion there ("340 pence is £3.40"); pence is the
+// fallback and cross-check. This is robust to workings like
+// "85 + 85 + 85 + 85 = 340 pence" that broke a last-token-only reader.
+function moneyFromWorking(working){
+  if(!working) return { poundsStr:null, pence:null };
+  const s = String(working).replace(/\u00d7/g, "x");
+  const gbp = [...s.matchAll(/£\s*(\d+(?:\.\d{1,2})?)/g)];
+  const poundsStr = gbp.length ? parseFloat(gbp[gbp.length - 1][1]).toFixed(2) : null;
+  const pen = [...s.matchAll(/(\d+)\s*(?:pence|p)\b/gi)];
+  const pence = pen.length ? parseInt(pen[pen.length - 1][1], 10) : null;
+  return { poundsStr, pence };
 }
 
 /**
@@ -381,33 +388,41 @@ function reconcileMoney(question){
   }
   if(!isPounds && !isPence) return question; // still not clearly money -> leave alone
 
-  const pence = finalPenceFromWorking(question.answer_working);
-  if(pence === null) return question; // can't read a final value confidently
+  const money = moneyFromWorking(question.answer_working);
+  // Need at least one readable money value from the working to act on.
+  if(money.pence === null && money.poundsStr === null) return question;
 
   // Re-express the answer to match the intended currency.
-  const correctedAnswer = isPounds ? penceToPoundsStr(pence) : String(pence);
+  let correctedAnswer;
+  if(isPounds){
+    // Prefer an explicit "£X.XX" the model wrote (the correct conversion); else
+    // convert the pence figure. This is robust to workings whose last pence-ish
+    // token is an addend (e.g. "85 + 85 + 85 + 85 = 340 pence").
+    if(money.poundsStr !== null)      correctedAnswer = money.poundsStr;
+    else                              correctedAnswer = penceToPoundsStr(money.pence);
+  } else { // pence
+    if(money.pence !== null)          correctedAnswer = String(money.pence);
+    else                              correctedAnswer = String(Math.round(parseFloat(money.poundsStr) * 100));
+  }
 
   // If we INFERRED pounds from the prompt but the unit box was blank, set it so
   // the "£" label shows beside the input (otherwise "3.40" would appear bare).
-  if(isPounds && !(unitRaw === "£" || /^gbp$/i.test(unitRaw)) && !unitRaw){
-    question.answer_unit = "£";
-  }
-  if(isPence && !(unitRaw === "p" || /^pence$/i.test(unitRaw)) && !unitRaw){
-    question.answer_unit = "p";
-  }
+  if(isPounds && !unitRaw){ question.answer_unit = "£"; }
+  if(isPence  && !unitRaw){ question.answer_unit = "p"; }
 
   // Only overwrite if it actually differs, so we never mangle a good answer.
   const currentAnswer = String(question.answer ?? "").trim();
   if(currentAnswer !== correctedAnswer){
     question.answer = correctedAnswer;
+    question.requires_teacher_check = true;
     question._money_reconciled = true;
   }
 
   // Fix a wrong "£x.xx" conversion tail inside the working (e.g. "140p or £1.12"
   // when 140p is £1.40). Replace any "£x.xx" that appears AFTER the final pence
   // token with the correct conversion, so hints/feedback don't contradict.
-  if(question.answer_working){
-    const correctPounds = penceToPoundsStr(pence);
+  if(question.answer_working && money.pence !== null){
+    const correctPounds = penceToPoundsStr(money.pence);
     question.answer_working = String(question.answer_working).replace(
       /(\bor\s*)£\s*\d+(?:\.\d{1,2})?/i,
       `$1£${correctPounds}`
