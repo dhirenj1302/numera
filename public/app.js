@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.78";
+const NUMERA_VERSION = "v2.79";
 const state = {
   files: [],
   sourceImages: [],
@@ -1597,6 +1597,46 @@ function reconcileAnswerWithWorking(q){
     if(!q || q.type!=="number") return;
     const working=String(q.answer_working||"");
     if(!working) return;
+
+    // MONEY FIRST. For a pounds question the generic "last = number" logic below
+    // wrongly latches onto "85 × 4 = 340" (pence), because "= £3.40" has the £
+    // between "=" and the number so it never matches. Handle money here and RETURN
+    // before the generic logic can clobber it. Look across working + feedback +
+    // hints for the correct "£X.XX" and use it when the unit is £ (or the prompt
+    // asks for pounds) and the stored answer is a bare integer — the classic
+    // pence-as-pounds slip (e.g. 340 that should be 3.40).
+    const unit=String(q.answer_unit||"").trim();
+    const promptText=String(q.prompt||"");
+    const wantsPounds = unit==="£" || /=\s*£/.test(promptText) || /\bin pounds\b/i.test(promptText);
+    if(wantsPounds){
+      const hay=[q.answer_working,q.explanation,...(Array.isArray(q.hints)?q.hints:[])].map(x=>String(x||"")).join("  ");
+      const cur=String(q.answer??"").trim();
+      const gbp=[...hay.matchAll(/£\s*(\d+(?:\.\d{1,2})?)/g)];
+      if(gbp.length){
+        const pounds=parseFloat(gbp[gbp.length-1][1]).toFixed(2);
+        if(/^\d+$/.test(cur) && cur!==pounds){       // only fix a bare-integer answer
+          if(!unit) q.answer_unit="£";
+          q.answer=pounds; q._answer_reconciled=true; q.requires_teacher_check=true;
+        }
+        delete q.money_unit_warning;
+        return;                                       // money handled
+      }
+      const pen=[...hay.matchAll(/(\d+)\s*(?:pence|p)\b/gi)];
+      if(pen.length && /^\d+$/.test(cur) && Number(cur)>=100){
+        const c=parseInt(pen[pen.length-1][1],10);
+        if(c===Number(cur)){
+          const pounds=(Math.floor(c/100))+"."+String(c%100).padStart(2,"0");
+          if(!unit) q.answer_unit="£";
+          q.answer=pounds; q._answer_reconciled=true; q.requires_teacher_check=true;
+          delete q.money_unit_warning;
+          return;
+        }
+      }
+      if(/^\d+$/.test(cur) && Number(cur)>=100){       // pounds Q we couldn't verify
+        q.requires_teacher_check=true; q.money_unit_warning=true; return;
+      }
+    }
+
     const norm=working.replace(/[×xX]/g,"*").replace(/[÷]/g,"/").replace(/[−–—]/g,"-").replace(/,/g,"");
     // The working's own final result is the LAST "= <number>" in the string —
     // this is the conclusion the teacher sees (e.g. "... = 315."). Trust it over
@@ -1710,6 +1750,10 @@ function renderReview(){
   // rather than always snapping back to Q1.
   if(typeof state.reviewOpenIndex!=="number") state.reviewOpenIndex=0;
   state.draft.questions=(state.draft.questions||[]).map(normaliseMultipartQuestion);
+  // Reconcile every question's answer against its working on each render — this
+  // guarantees the money (pence↔pounds) and answer/working fixes apply even to
+  // questions created before this version, the moment the editor shows them.
+  (state.draft.questions||[]).forEach(q=>reconcileAnswerWithWorking(q));
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
