@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.80";
+const NUMERA_VERSION = "v2.81";
 const state = {
   files: [],
   sourceImages: [],
@@ -1899,6 +1899,7 @@ function questionEditor(q,i){
       ${(q.requires_teacher_check || ["drawing","point","coordinate","matching","shade"].includes(q.type)) ? `<div class="teacher-check-card">
         <strong>Teacher verification required</strong>
         <p>${q.type==="drawing" ? "This answer will be drawn on the worksheet image and saved for adult review." : q.type==="point" ? "Check the coordinate bounds and correct point before publishing." : q.type==="matching" ? "Check every left item, right item and correct pair before publishing." : q.type==="shade" ? "Confirm the grid size and fraction above match the printed shape before publishing — the photo reading of grids can be wrong." : "Verve counted information from a visual. Check the image, calculation and final answer before publishing."}</p>
+        ${q._self_check_disagreed ? `<p class="self-check-alert"><strong>⚠ Two reads disagreed.</strong> A second automatic read of the image did not match the stored answer, so the picture may have been misread. Please check the numbers on the image and correct the answer above if needed.</p>` : ""}
         ${q.answer_working ? `<div class="visual-working"><span>AI calculation</span>${esc(q.answer_working)}</div>` : ""}
         <label class="confirm-check"><input type="checkbox" data-k="teacher_confirmed" ${q.teacher_confirmed?"checked":""}> I have checked this question and answer</label>
       </div>` : ""}
