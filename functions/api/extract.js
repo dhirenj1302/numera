@@ -611,6 +611,12 @@ For every complete visible question:
 1c. "DECIMAL FRACTION" MEANS A DECIMAL. In UK primary maths, "decimal fraction" is the term for a fraction written as a DECIMAL NUMBER, not as n/d. So if a question says "write as a decimal fraction", "give your answer as a decimal", "write the shaded part as a decimal fraction", or similar, the ANSWER MUST BE A DECIMAL and type=number. Examples: shaded part 4/10 -> answer "0.4" (NOT "4/10"); 6/10 -> "0.6"; 3/100 -> "0.03"; 1/2 -> "0.5". Do NOT store "4/10" as the answer and do NOT use type=fraction for these — the pupil enters a decimal on the number pad. Only treat an answer as a common fraction (rule 9e, type=fraction) when the question actually wants n/d form (e.g. "write as a fraction in its simplest form"), NOT when it asks for a decimal fraction.
 1b. MINUS SIGN, NOT HYPHEN. When the image shows a subtraction or negative sign, transcribe it as a real minus sign "−" (U+2212), not a hyphen "-". For example "7 − 5" and "−3", using "−". This ensures it is read aloud as "minus" rather than a dash. (Ranges or hyphenated words that are genuinely hyphens stay as hyphens; only mathematical minus/subtraction becomes "−".)
 2. Solve it and provide the correct answer.
+2a. SELECTING THE HIGHEST/LOWEST N THEN COMBINING. For any question that asks you to pick the largest/smallest/highest/lowest N values from a set of numbers (e.g. "total of the lowest and highest two numbers", "add the two largest", "difference between the smallest and largest") — especially when the numbers are printed on cards or in a grid you must read from the image — follow this procedure EXACTLY and show it in answer_working:
+   (i) List EVERY value you can see, in the order shown, e.g. "Cards: 4, 6, 8, 35, 22, 47".
+   (ii) Sort them so the order is unambiguous, e.g. "Sorted ascending: 4, 6, 8, 22, 35, 47".
+   (iii) Pick the required ones from the SORTED list and name them explicitly, e.g. "lowest = 4; highest two = 47 and 35".
+   (iv) Then combine and show the sum, e.g. "4 + 47 + 35 = 86".
+   Never pick a value that is not actually among the N largest/smallest — a common error is grabbing an early-listed number (like 6) instead of the true second-largest (35). Re-check step (iii) against the sorted list before adding. Set requires_teacher_check=true for these.
 3. Create exactly four progressive hint tiers in the hints array:
    - Hint 1: a gentle orienting prompt. Do not name the operation or method.
    - Hint 2: a strategy cue that identifies the useful approach but does not calculate it.
@@ -699,6 +705,54 @@ Only populate these fields with meaningful values when the selected question typ
   }
 }
 
+// Independent second-opinion pass for VISUAL questions that depend on reading
+// values off an image (the AI's weakest area). We re-ask the model to answer just
+// this one question from the image, with the strict list→sort→pick procedure, then
+// compare. On DISAGREEMENT we do NOT pick a winner (the same model could be wrong
+// twice); we keep requires_teacher_check and add a loud, specific warning showing
+// both answers so the teacher checks carefully. Only runs on flagged visual
+// questions, so cost is bounded to the questions that most need it.
+async function selfCheckVisual(context, imageUrl, pageIndex, question){
+  try{
+    if(!question || !question.needs_visual) return "";
+    if(question.type==="drawing") return ""; // no single numeric answer to compare
+    const original=String(question.answer??"").trim();
+    if(!original) return "";
+
+    const checkPrompt=`Look ONLY at the image. Answer this one UK primary maths question as carefully as possible.\n`+
+      `Question: ${question.prompt}\n\n`+
+      `If it asks you to pick the highest/lowest N numbers and combine them: (i) list every value you see, (ii) sort them, (iii) name the exact ones to use, (iv) compute. Read numbers off the image digit by digit.\n`+
+      `Reply as strict JSON only: {"answer":"<final answer as the pupil would type it>","working":"<your steps>"}. No other text.`;
+
+    const data=await openaiResponsesCall(context.env.OPENAI_API_KEY,{
+      model:context.env.OPENAI_MODEL || "gpt-4.1-mini",
+      input:[{role:"user",content:[
+        {type:"input_text",text:checkPrompt},
+        {type:"input_image",image_url:imageUrl,detail:"high"}
+      ]}],
+      max_output_tokens:1500
+    },{retries:0});
+
+    const raw=outputText(data);
+    if(!raw) return "";
+    let second;
+    try{ second=JSON.parse(raw.replace(/```json|```/g,"").trim()); }catch{ return ""; }
+    const check=String(second.answer??"").trim();
+    if(!check) return "";
+
+    // Compare leniently: strip spaces and a leading currency symbol / trailing unit.
+    const norm=s=>String(s).toLowerCase().replace(/[£$\s]/g,"").replace(/(p|cm|mm|ml|kg|g|m)$/,"");
+    if(norm(check)!==norm(original)){
+      question.requires_teacher_check=true;
+      question._self_check_disagreed=true;
+      return `a second read of this visual gave "${check}" but the stored answer is "${original}" — please check the image and confirm which is right`;
+    }
+    return "";
+  }catch(e){
+    return ""; // never let the self-check break extraction
+  }
+}
+
 export async function onRequestPost(context){
   try{
     const {images=[], setter_username="", token=""}=await context.request.json();
@@ -746,6 +800,13 @@ export async function onRequestPost(context){
           const fracWarn = flagUntypeableFractionParts(question);
           if(fracWarn){
             warnings.push(`Page ${i+1}: ${fracWarn}`);
+          }
+          // Independent second read for visual questions the AI flagged for check.
+          if(question.needs_visual && question.requires_teacher_check){
+            const scWarn = await selfCheckVisual(context, images[i], i, question);
+            if(scWarn){
+              warnings.push(`Page ${i+1}: ${scWarn}`);
+            }
           }
           allQuestions.push({
             ...question,
