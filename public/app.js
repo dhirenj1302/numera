@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.77";
+const NUMERA_VERSION = "v2.78";
 const state = {
   files: [],
   sourceImages: [],
@@ -1778,6 +1778,7 @@ function questionEditor(q,i){
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
+      ${q.money_unit_warning?`<div class="notice multipart-warning"><strong>Check pounds vs pence:</strong> the unit is £ but the answer "${esc(String(q.answer))}" looks like a pence amount. If it should be pounds, change it to a decimal (e.g. 340 → 3.40). If the answer really is in pence, change the unit to p.</div>`:""}
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
       ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
@@ -2004,10 +2005,33 @@ function syncEditors(){
         delete q.fraction_part_warning;
       }
     }
+    // Money sanity: unit is "£" but the answer is a bare integer with no decimal
+    // point (e.g. "340"). A genuine pounds answer to a money question is normally
+    // a decimal like "3.40" — a bare large integer is almost always a pence count
+    // mislabelled as pounds. Look for the correct "£X.XX" in the working/feedback/
+    // hints and use it; if found none, flag for teacher review rather than guess.
+    if((q.type==="number"||q.type==="") && String(q.answer_unit||"").trim()==="£"
+       && /^\s*\d+\s*$/.test(String(q.answer||"")) && Number(q.answer)>=100){
+      const haystack=[q.answer_working,q.explanation,...(Array.isArray(q.hints)?q.hints:[])]
+        .map(x=>String(x||"")).join("  ");
+      const gbp=[...haystack.matchAll(/£\s*(\d+(?:\.\d{1,2})?)/g)];
+      const pen=[...haystack.matchAll(/(\d+)\s*(?:pence|p)\b/gi)];
+      let fixed=null;
+      if(gbp.length){ fixed=parseFloat(gbp[gbp.length-1][1]).toFixed(2); }
+      else if(pen.length){ const c=parseInt(pen[pen.length-1][1],10); fixed=(Math.floor(c/100))+"."+String(c%100).padStart(2,"0"); }
+      // Only apply if the pounds value, converted back to pence, matches the
+      // stored integer — a strong check that "340" really was these pence.
+      if(fixed && Math.round(parseFloat(fixed)*100)===Number(q.answer)){
+        q.answer=fixed; q.requires_teacher_check=true; q.money_unit_fixed=true;
+      } else {
+        q.requires_teacher_check=true; q.money_unit_warning=true;
+      }
+    } else {
+      delete q.money_unit_warning; delete q.money_unit_fixed;
+    }
   });
   saveDraft();
-}
-// On-demand: ask the backend to suggest multiple-choice options for question i —
+}// On-demand: ask the backend to suggest multiple-choice options for question i —
 // the correct answer plus diagnostic distractors (each tied to a common mistake).
 window.suggestOptions = async i => {
   syncEditors();
