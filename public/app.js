@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.82";
+const NUMERA_VERSION = "v2.83";
 const state = {
   files: [],
   sourceImages: [],
@@ -1555,7 +1555,7 @@ async function extractHomework(){
     // recompute the working's final step in JS (never wrong) and, if it disagrees
     // with the stored answer, trust the recomputed value. This is a code check,
     // not a prompt instruction, so it doesn't depend on the AI being careful.
-    (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);});
+    (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -1646,9 +1646,13 @@ function reconcileAnswerWithWorking(q){
     let target=parseFloat(eqs[eqs.length-1][1]);
     // If the final step is a clean "a op b = result" AND our recomputation of a op
     // b disagrees with the stated result, trust the recomputation (covers a stated
-    // result that is itself mis-added). We ONLY look at the operation immediately
-    // before the final "=", to avoid picking up earlier/intermediate steps.
-    const finalStep=norm.match(/(-?\d+(?:\.\d+)?)\s*([-+*/])\s*(-?\d+(?:\.\d+)?)\s*=\s*-?\d+(?:\.\d+)?\s*\.?\s*$/);
+    // result that is itself mis-added). We ONLY do this when the final "=" is
+    // preceded by a SIMPLE two-operand expression with no earlier chained terms —
+    // otherwise a sum like "400 + 80 + 20 = 500" would wrongly match just its last
+    // two operands ("80 + 20 = 500") and mis-correct a CORRECT answer. So we
+    // require that the character just before "a" is not itself part of a longer
+    // arithmetic chain (no preceding operator/operand feeding into it).
+    const finalStep=norm.match(/(?:^|[=:.;])\s*(-?\d+(?:\.\d+)?)\s*([-+*/])\s*(-?\d+(?:\.\d+)?)\s*=\s*-?\d+(?:\.\d+)?\s*\.?\s*$/);
     if(finalStep){
       const a=parseFloat(finalStep[1]), op=finalStep[2], b=parseFloat(finalStep[3]);
       if(Number.isFinite(a)&&Number.isFinite(b)){
@@ -1710,6 +1714,33 @@ function reconcileCoinsFE(q){
       }
     }
     q.requires_teacher_check=true;   // couldn't verify — leave for teacher
+  }catch(e){ /* leave unchanged on any parse issue */ }
+}
+
+// Flag two malformed patterns for teacher review (can't be auto-fixed reliably):
+//  #1 A multiple_choice whose answer looks like a part LABEL + category, e.g.
+//     "a obtuse" / "b acute" — the AI collapsed a "(a) which are obtuse (b) which
+//     are acute" question into a nonsensical single choice. The real answer is a
+//     set of angle labels (w/x/y/z) the AI misread.
+//  #2 A typed answer containing "/" for a "= ___ <word>" blank (e.g. "2/3 = ___
+//     sixths" answered "4/6") — the child can't type "/", and the blank wants the
+//     numerator only.
+function flagMalformedFE(q){
+  try{
+    if(!q || typeof q!=="object") return;
+    const ans=String(q.answer||"").trim();
+    const prompt=String(q.prompt||"");
+    let warn=null;
+    // #1 letter-label MC
+    if(q.type==="multiple_choice" && /^[a-d]\s+(obtuse|acute|right|reflex|true|false|yes|no)\b/i.test(ans)){
+      warn="This looks mis-structured: the answer \""+ans+"\" is a part label plus a word, not a real answer. This is usually a 'which of w, x, y, z are…' question the AI misread. Please rewrite it — e.g. ask one thing with number/label answers the child can pick — before publishing.";
+    }
+    // #2 slash-fraction answer to a "= ___ <denominator-word>" blank
+    else if(/\//.test(ans) && /=\s*_+\s*(halves|thirds|quarters|fifths|sixths|sevenths|eighths|ninths|tenths|twelfths|hundredths)\b/i.test(prompt)){
+      warn="The blank asks for a single number (the numerator), but the answer is \""+ans+"\" which contains a \"/\" the child can't type. Change the answer to just the numerator (e.g. 4 for \"= ___ sixths\").";
+    }
+    if(warn){ q.requires_teacher_check=true; q.malformed_warning=warn; }
+    else { delete q.malformed_warning; }
   }catch(e){ /* leave unchanged on any parse issue */ }
 }
 
@@ -1800,7 +1831,7 @@ function renderReview(){
   // Reconcile every question's answer against its working on each render — this
   // guarantees the money (pence↔pounds) and answer/working fixes apply even to
   // questions created before this version, the moment the editor shows them.
-  (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);});
+  (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
@@ -1870,6 +1901,7 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
       ${q.money_unit_warning?`<div class="notice multipart-warning"><strong>Check pounds vs pence:</strong> the unit is £ but the answer "${esc(String(q.answer))}" looks like a pence amount. If it should be pounds, change it to a decimal (e.g. 340 → 3.40). If the answer really is in pence, change the unit to p.</div>`:""}
+      ${q.malformed_warning?`<div class="notice multipart-warning"><strong>Please check this question:</strong> ${esc(q.malformed_warning)}</div>`:""}
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
       ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
