@@ -555,6 +555,9 @@
 .sequence-hint{font-size:12.5px;color:var(--muted);margin-bottom:6px}
 .sequence-boxes{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .sequence-box{width:64px;text-align:center;font-size:18px;font-weight:700;padding:12px 6px;border:1px solid #d0d5dd;border-radius:12px}
+.sequence-box-group{display:inline-flex;align-items:stretch;border:1px solid #d0d5dd;border-radius:12px;overflow:hidden;background:#fff}
+.sequence-box-group .sequence-box{border:0;border-radius:0;width:56px}
+.sequence-sign{min-width:34px;font-size:16px;border-right:1px solid #d0d5dd}
 .sequence-sep{font-weight:800;color:var(--muted)}
 .sequence-note{font-size:12.5px;margin-top:8px}
 

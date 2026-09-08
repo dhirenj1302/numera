@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.81";
+const NUMERA_VERSION = "v2.82";
 const state = {
   files: [],
   sourceImages: [],
@@ -1872,7 +1872,7 @@ function questionEditor(q,i){
       ${q.money_unit_warning?`<div class="notice multipart-warning"><strong>Check pounds vs pence:</strong> the unit is £ but the answer "${esc(String(q.answer))}" looks like a pence amount. If it should be pounds, change it to a decimal (e.g. 340 → 3.40). If the answer really is in pence, change the unit to p.</div>`:""}
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
-      ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
+      ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
 
       ${q.type==="coordinate"?`<div class="interaction-editor"><strong>Coordinate-answer setup</strong><div class="field"><label>Correct coordinate</label><input data-k="coordinate_answer" value="${esc(Array.isArray(q.coordinate_answer)?JSON.stringify(q.coordinate_answer):String(q.coordinate_answer||q.answer||"[0,0]"))}" placeholder="[3, 2]"></div><p class="small muted">Students will see separate x and y boxes.</p></div>`:""}
       ${q.type==="point"?`<div class="interaction-editor">
@@ -2090,12 +2090,13 @@ function syncEditors(){
       const badParts=q.parts
         .filter(p=>{const t=p.type||"number";return (t==="number"||t==="")&&/^\s*-?\d+\s*\/\s*\d+\s*$/.test(String(p.answer||""));})
         .map(p=>p.label||"?");
-      if(badParts.length){
-        q.requires_teacher_check=true;
-        q.fraction_part_warning=badParts;
-      } else {
-        delete q.fraction_part_warning;
-      }
+      const letterParts=q.parts
+        .filter(p=>{const t=p.type||"number";const a=String(p.answer||"").trim();return (t==="number"||t==="")&&/[a-z]/i.test(a)&&!/^(am|pm)$/i.test(a);})
+        .map(p=>p.label||"?");
+      if(badParts.length){ q.requires_teacher_check=true; q.fraction_part_warning=badParts; }
+      else { delete q.fraction_part_warning; }
+      if(letterParts.length){ q.requires_teacher_check=true; q.letter_part_warning=letterParts; }
+      else { delete q.letter_part_warning; }
     }
     // Money sanity: unit is "£" but the answer is a bare integer with no decimal
     // point (e.g. "340"). A genuine pounds answer to a money question is normally
@@ -2720,10 +2721,13 @@ function sequenceMarkup(idBase,item){
   const perBoxUnits = unitList.length>1;
   const boxes=Array.from({length:count},(_,k)=>{
     const box=`<input id="${idBase}_${k}" class="sequence-box" inputmode="decimal" autocomplete="off" aria-label="Number ${k+1} of ${count}${perBoxUnits&&unitList[k]?` (${unitList[k]})`:""}">`;
+    // Phone number pads have no minus key, so each box gets a ± toggle — needed
+    // for sequences that go negative (e.g. 16,12,8,4,0,-4,-8).
+    const boxWithSign=`<span class="sequence-box-group"><button type="button" class="sign-toggle sequence-sign" onclick="toggleAnswerSign('${idBase}_${k}')" aria-label="Make this number negative or positive" title="Make negative / positive">±</button>${box}</span>`;
     if(perBoxUnits){
-      return `<span class="sequence-unit-group">${box}${unitList[k]?`<span class="sequence-unit">${esc(unitList[k])}</span>`:""}</span>`;
+      return `<span class="sequence-unit-group">${boxWithSign}${unitList[k]?`<span class="sequence-unit">${esc(unitList[k])}</span>`:""}</span>`;
     }
-    return box;
+    return boxWithSign;
   }).join(perBoxUnits ? "" : '<span class="sequence-sep">,</span>');
   const trailingUnit = (!perBoxUnits && item.answer_unit) ? `<span class="answer-unit">${esc(item.answer_unit)}</span>` : "";
   return `<div class="sequence-answer"><div class="sequence-hint">Fill each box in order.</div><div class="sequence-boxes">${boxes}</div>${trailingUnit}</div>`;
