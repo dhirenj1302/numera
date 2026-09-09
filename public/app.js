@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.84";
+const NUMERA_VERSION = "v2.85";
 const state = {
   files: [],
   sourceImages: [],
@@ -3436,10 +3436,10 @@ window.checkAnswer=async()=>{
       const auto=mark.confidence>=0.72;
       const record={question_index:state.index,first_answer:given,first_correct:auto?mark.correct:false,retries:0,mastered:auto?mark.correct:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:!auto,drawing_preview:parsed.preview,drawing_feedback:mark.feedback,drawing_confidence:mark.confidence};
       state.attempts[state.index]=record;
-      app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":"Next question"}</button></div>`,"returnToCurrentQuestion()");
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":nextButtonLabel()}</button></div>`,"returnToCurrentQuestion()");
     }catch(err){
       state.attempts[state.index]={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:parsed.preview};
-      app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">Next question</button></div>`,"returnToCurrentQuestion()");
+      app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">${nextButtonLabel()}</button></div>`,"returnToCurrentQuestion()");
     }
     return;
   }
@@ -3547,7 +3547,7 @@ window.checkPractice=()=>{
         <div class="mascot">🌱</div>
         <h1>Let’s keep going</h1>
         <div class="feedback learn">That one was still tricky. Verve has recorded it as a skill to practise, and we’ll move to the next question.</div>
-        <button class="btn green block" onclick="nextQuestion()">Next question</button>
+        <button class="btn green block" onclick="nextQuestion()">${nextButtonLabel()}</button>
       </div>
     `);
     if(state.voiceEnabled) setTimeout(()=>speak("That one was still tricky. That is okay. We will practise it again another time and move to the next question."),120);
@@ -3563,7 +3563,7 @@ function renderCorrect(firstTry,upgraded=false){
       <h1>${firstTry?"Fantastic!":"Score upgraded!"}</h1>
       <div class="feedback good">${firstTry?"You got it on your first attempt.":"You learned from the mistake and mastered the skill."}</div>
       ${voiceControl()}
-      <button class="btn green block" style="margin-top:10px" onclick="nextQuestion()">Next question</button>
+      <button class="btn green block" style="margin-top:10px" onclick="nextQuestion()">${nextButtonLabel()}</button>
     </div>
   `);
   if (state.voiceEnabled) setTimeout(() => speak(praise), 120);
@@ -3574,6 +3574,21 @@ window.nextQuestion=()=>{
   if(state.index>=state.homework.questions.length) finishHomework();
   else renderQuestion();
 };
+
+// Label for the green "advance" button. On the LAST question there is no next
+// question — clicking it finishes the set — so it should say so. We reuse the
+// existing "mission" lexicon (the complete screen already says "You completed
+// the mission"), and keep "Level Up" reserved for the challenge round offered
+// AFTER the score screen, so that term stays meaningful.
+function nextButtonLabel(){
+  const total=state.homework?.questions?.length||0;
+  const isLast=state.index>=total-1;
+  if(!isLast) return "Next question";
+  // On the final question, the button finishes the set. Wording matches the
+  // context: a Level Up is the bonus challenge (so "Finish Level Up"), while the
+  // main set completes the "mission". "Level Up" stays reserved for that round.
+  return state.homework?.is_level_up ? "Finish Level Up" : "Complete the mission";
+}
 
 async function finishHomework(){
   const total=state.homework.questions.length;
