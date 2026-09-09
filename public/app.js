@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.83";
+const NUMERA_VERSION = "v2.84";
 const state = {
   files: [],
   sourceImages: [],
@@ -2485,6 +2485,17 @@ async function loadHomework(id, mode){
       state.index=0;
       state.attempts=[];
       renderMission();
+    }else if(state.homework?.settings?.demo){
+      // Demo homeworks are open to anyone — no setter, no username, no PIN.
+      // Drop the child (or teacher) straight into playing as an anonymous guest
+      // so there's zero friction to try the app. Real (setter-owned) homeworks
+      // still go through renderJoin below, keeping pupil accounts secure.
+      state.studentName="Guest";
+      state.studentUsername="";
+      state.studentToken="";
+      state.index=0;
+      state.attempts=[];
+      renderMission();
     }else renderJoin();
   }catch(e){app.innerHTML=shell(`<div class="card"><h2>Homework unavailable</h2><p>${esc(e.message)}</p></div>`,true);}
 }
@@ -3664,6 +3675,16 @@ function renderSavingResults(){
 
 async function savePendingSubmission(){
   if(!state.pendingSubmission) return;
+  // Demo homeworks have no real student account, so there's nothing to save
+  // server-side (and /api/submissions requires a username). Show the completion
+  // screen directly from the locally-computed summary.
+  if(state.homework?.settings?.demo){
+    const s=state.pendingSubmission.summary;
+    localStorage.removeItem("numera:pendingSubmission");
+    state.pendingSubmission=null;
+    renderComplete(s.original,s.mastery,s.scoreTotal,s.strengths,s.needs,s.teacherReviewCount,"",s.insight,null);
+    return;
+  }
   try{
     const result=await api("/api/submissions",{
       method:"POST",
