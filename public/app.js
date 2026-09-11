@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.87";
+const NUMERA_VERSION = "v2.88";
 const state = {
   files: [],
   sourceImages: [],
@@ -1922,7 +1922,7 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="coins" ${q.type==="coins"?"selected":""}>Coins (tap coins to make an amount)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="fraction" ${q.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="coins" ${q.type==="coins"?"selected":""}>Coins (tap coins to make an amount)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
