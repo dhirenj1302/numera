@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.86";
+const NUMERA_VERSION = "v2.87";
 const state = {
   files: [],
   sourceImages: [],
@@ -1555,7 +1555,7 @@ async function extractHomework(){
     // recompute the working's final step in JS (never wrong) and, if it disagrees
     // with the stored answer, trust the recomputed value. This is a code check,
     // not a prompt instruction, so it doesn't depend on the AI being careful.
-    (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+    (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -1744,6 +1744,32 @@ function flagMalformedFE(q){
   }catch(e){ /* leave unchanged on any parse issue */ }
 }
 
+// Detect answer types that must not stay as a plain "number" because the answer
+// can't be typed on a number pad. Runs on EVERY render (not just on edit), so a
+// question created by an older version — or one the teacher hasn't touched — is
+// corrected the moment it's shown. Mirrors the logic in syncEditors(), which
+// only runs on edit; without this, a top-level "1/10" answer would keep showing
+// as "Type an answer" until the teacher happened to edit a field.
+function detectAnswerTypeFE(q){
+  try{
+    if(!q || typeof q!=="object") return;
+    const SLASH=/^\s*-?\d+\s*\/\s*\d+\s*$/;
+    // Top-level: a single "n/d" answer on a number question -> fraction input.
+    if(!q.type_user_set && (q.type==="number"||q.type==="") && SLASH.test(String(q.answer||""))){
+      q.type="fraction";
+    }
+    // Multipart: any part whose answer is "n/d" -> fraction input for that part.
+    if(q.type==="multipart" && Array.isArray(q.parts)){
+      q.parts.forEach(p=>{
+        const t=p.type||"number";
+        if((t==="number"||t==="")&&!p.type_user_set&&SLASH.test(String(p.answer||""))){
+          p.type="fraction";
+        }
+      });
+    }
+  }catch(e){ /* leave unchanged on any parse issue */ }
+}
+
 function normaliseMultipartQuestion(q){
   q.parts=Array.isArray(q.parts)?q.parts:[];
   // A unit conversion like "98mm = _ cm _ mm" is sometimes mislabelled as
@@ -1831,7 +1857,7 @@ function renderReview(){
   // Reconcile every question's answer against its working on each render — this
   // guarantees the money (pence↔pounds) and answer/working fixes apply even to
   // questions created before this version, the moment the editor shows them.
-  (state.draft.questions||[]).forEach(q=>{reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+  (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
