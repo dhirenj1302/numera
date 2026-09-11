@@ -595,7 +595,10 @@ function flagUntypeableFractionParts(question){
     if(type === "number" || type === ""){
       const ans = String(p.answer || "").trim();
       if(SLASH_FRACTION.test(ans)){
-        bad.push(`${p.label || "?"} (answer "${ans}")`);
+        // A slash-fraction answer can't be typed on a number pad, so switch the
+        // part to the dedicated FRACTION input (two boxes with a fixed "/"),
+        // which the pupil view renders for parts. No teacher action needed.
+        p.type = "fraction";
       } else if(/[a-z]/i.test(ans) && !/^(am|pm)$/i.test(ans)){
         // A number-typed part whose answer contains letters (e.g. "w, z" for an
         // angles question, a shape name, a word) can't be typed on a numeric pad.
