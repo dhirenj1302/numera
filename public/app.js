@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.88";
+const NUMERA_VERSION = "v2.89";
 const state = {
   files: [],
   sourceImages: [],
@@ -1555,7 +1555,7 @@ async function extractHomework(){
     // recompute the working's final step in JS (never wrong) and, if it disagrees
     // with the stored answer, trust the recomputed value. This is a code check,
     // not a prompt instruction, so it doesn't depend on the AI being careful.
-    (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+    (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -1770,6 +1770,45 @@ function detectAnswerTypeFE(q){
   }catch(e){ /* leave unchanged on any parse issue */ }
 }
 
+// Deterministic solver for "missing operator" puzzles: "a ● b = c ▲ d", where the
+// child must choose the +, −, × or ÷ that make both sides equal. gpt-4.1-mini is
+// unreliable at this search (it talks itself out of the right answer — see the
+// 14●7=35▲5 case where it stored ×,− instead of −,÷). Since everything needed is
+// in the QUESTION TEXT, we brute-force all 16 operator pairs in code and use the
+// pair that balances. Unique solution -> fix the answer; multiple or none -> leave
+// it and flag for teacher review (don't guess).
+function solveMissingOpsFE(q){
+  try{
+    if(!q || typeof q!=="object") return;
+    const type=q.type||"number";
+    if(type!=="multiple_choice" && type!=="number" && type!=="") return;
+    const p=String(q.prompt||"");
+    // number PLACEHOLDER number = number PLACEHOLDER number
+    const ph="[●▲■◆★□○◇•\\?_]+";
+    const m=p.match(new RegExp(`(\\d+)\\s*${ph}\\s*(\\d+)\\s*=\\s*(\\d+)\\s*${ph}\\s*(\\d+)`));
+    if(!m) return;
+    const a=+m[1],b=+m[2],c=+m[3],d=+m[4];
+    const OPS={"+":(x,y)=>x+y,"-":(x,y)=>x-y,"×":(x,y)=>x*y,"÷":(x,y)=>(y!==0&&x%y===0)?x/y:null};
+    const KEYS=["+","-","×","÷"];
+    const sols=[];
+    for(const o1 of KEYS){const L=OPS[o1](a,b);if(L===null)continue;for(const o2 of KEYS){const R=OPS[o2](c,d);if(R===null)continue;if(L===R)sols.push(`${o1}, ${o2}`);}}
+    if(sols.length===1){
+      const correct=sols[0];
+      if(String(q.answer||"").replace(/\s/g,"")!==correct.replace(/\s/g,"")){
+        q.answer=correct;
+        q.requires_teacher_check=true;   // surface the correction
+        q._ops_solved=true;
+      }
+      delete q.ops_warning;
+    }else{
+      // 0 solutions (misread) or several (ambiguous) — don't guess.
+      q.requires_teacher_check=true; q.ops_warning=(sols.length===0)
+        ? "No pair of signs makes both sides equal — check the numbers were read correctly."
+        : `More than one pair of signs works (${sols.join("  or  ")}) — pick the intended answer.`;
+    }
+  }catch(e){ /* leave unchanged on any parse issue */ }
+}
+
 function normaliseMultipartQuestion(q){
   q.parts=Array.isArray(q.parts)?q.parts:[];
   // A unit conversion like "98mm = _ cm _ mm" is sometimes mislabelled as
@@ -1857,7 +1896,7 @@ function renderReview(){
   // Reconcile every question's answer against its working on each render — this
   // guarantees the money (pence↔pounds) and answer/working fixes apply even to
   // questions created before this version, the moment the editor shows them.
-  (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+  (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
@@ -1928,6 +1967,7 @@ function questionEditor(q,i){
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
       ${q.money_unit_warning?`<div class="notice multipart-warning"><strong>Check pounds vs pence:</strong> the unit is £ but the answer "${esc(String(q.answer))}" looks like a pence amount. If it should be pounds, change it to a decimal (e.g. 340 → 3.40). If the answer really is in pence, change the unit to p.</div>`:""}
       ${q.malformed_warning?`<div class="notice multipart-warning"><strong>Please check this question:</strong> ${esc(q.malformed_warning)}</div>`:""}
+      ${q.ops_warning?`<div class="notice multipart-warning"><strong>Check the signs:</strong> ${esc(q.ops_warning)}</div>`:""}
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
       ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="fraction" ${p.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
