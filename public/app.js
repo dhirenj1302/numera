@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.89";
+const NUMERA_VERSION = "v2.90";
 const state = {
   files: [],
   sourceImages: [],
@@ -2402,7 +2402,9 @@ window.publishHomework = async () => {
     document.querySelector(`[data-i="${badMc}"]`)?.setAttribute("open","");
     return;
   }
-  if(state.draft.questions.some(q=>{
+  // Find the FIRST question with a blocking problem and tell the teacher exactly
+  // which question, what's wrong, and how to fix it (then open that question).
+  const problemIdx=state.draft.questions.findIndex(q=>{
     if(!String(q.prompt||"").trim()) return true;
     if(q.type==="drawing") return false;
     if(q.type==="point") return parseNumberList(q.point_answer,parseNumberList(q.answer,[])).length!==2;
@@ -2416,7 +2418,44 @@ window.publishHomework = async () => {
       );
     }
     return String(q.answer??"").trim()==="";
-  })) return alert("Every part of a multi-part question must have its own wording and correct answer before publishing.");
+  });
+  if(problemIdx>=0){
+    const q=state.draft.questions[problemIdx];
+    const n=problemIdx+1;
+    let msg;
+    if(!String(q.prompt||"").trim()){
+      msg=`Question ${n} has no question wording. Add the question text before publishing.`;
+    }else if(q.type==="point"||q.type==="coordinate"){
+      msg=`Question ${n} needs a correct point as two numbers (x and y). Set the correct answer before publishing.`;
+    }else if(q.type==="matching"){
+      msg=`Question ${n} (matching) needs the same number of left items, right items and correct pairs. Check the matching lists before publishing.`;
+    }else if(q.type==="multipart"){
+      if(!(q.parts?.length>1)){
+        msg=`Question ${n} is set to "Multiple parts" but has fewer than two parts. Add the parts (a, b…), or change its answer type.`;
+      }else{
+        // Name the exact part(s) that need attention.
+        const bad=q.parts
+          .map((p,i)=>({label:p.label||String.fromCharCode(97+i),
+            noPrompt:!String(p.prompt||"").trim(),
+            placeholder:/check wording/i.test(String(p.prompt||"")),
+            noAnswer:!String(p.answer??"").trim()}))
+          .filter(p=>p.noPrompt||p.placeholder||p.noAnswer);
+        const parts=bad.map(p=>{
+          const needs=[];
+          if(p.noPrompt||p.placeholder) needs.push("wording");
+          if(p.noAnswer) needs.push("a correct answer");
+          return `part ${p.label} (needs ${needs.join(" and ")})`;
+        }).join(", ");
+        msg=`Question ${n}: ${parts}. Fill these in before publishing.`;
+      }
+    }else{
+      msg=`Question ${n} has no correct answer. Add the correct answer before publishing.`;
+    }
+    alert(msg);
+    document.querySelector(`[data-i="${problemIdx}"]`)?.setAttribute("open","");
+    document.querySelector(`[data-i="${problemIdx}"]`)?.scrollIntoView({behavior:"smooth",block:"center"});
+    return;
+  }
   const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) && !q.teacher_confirmed);
   if(unchecked>=0){
     alert(`Please open Question ${unchecked+1} and confirm that you have checked its visual and answer.`);
