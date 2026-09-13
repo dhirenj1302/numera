@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.90";
+const NUMERA_VERSION = "v2.91";
 const state = {
   files: [],
   sourceImages: [],
@@ -3021,8 +3021,16 @@ function pointGridMarkup(q){
 }
 window.selectGridPoint=event=>{
   const q=state.homework.questions[state.index],svg=event.currentTarget,c=pointConfig(q);
-  state.interactiveAnswers[state.index]=svgToCoordinate(event.clientX,event.clientY,svg,c);
+  const coord=svgToCoordinate(event.clientX,event.clientY,svg,c);
+  state.interactiveAnswers[state.index]=coord;
+  // Re-render to show the marker, but DON'T re-read the whole question aloud on
+  // every tap. Instead announce just the point the child selected.
+  state.suppressQuestionSpeak=true;
   renderQuestion();
+  state.suppressQuestionSpeak=false;
+  if(state.voiceEnabled && Array.isArray(coord) && coord.length===2){
+    speak(`Point ${coord[0]}, ${coord[1]}`, true);
+  }
 };
 
 function matchingConfig(q){
@@ -3320,7 +3328,7 @@ function renderQuestion(){
     drawingState.active=null;
     setTimeout(initialiseDrawingCanvas,80);
   }
-  if (state.voiceEnabled) setTimeout(() => speak(`Question ${state.index + 1}. ${q.prompt}`), 120);
+  if (state.voiceEnabled && !state.suppressQuestionSpeak) setTimeout(() => speak(`Question ${state.index + 1}. ${q.prompt}`), 120);
 }
 window.selectOption=(v,opts={})=>{
   state.selected=v;
@@ -3627,7 +3635,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : /^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.practice_answer||"")) ? `<div class="field"><label>Your answer</label>${sequenceMarkup("practiceSeq",{answer:q.practice_answer})}</div>` : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
+      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : /^\s*-?\d+(?:\.\d+)?(\s*,\s*-?\d+(?:\.\d+)?){1,}\s*$/.test(String(q.practice_answer||"")) ? `<div class="field"><label>Your answer</label>${sequenceMarkup("practiceSeq",{answer:q.practice_answer})}</div>` : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
@@ -3641,7 +3649,7 @@ window.retryOriginal=()=>renderQuestion();
 window.checkPractice=()=>{
   const q=state.homework.questions[state.index];
   const timePractice=/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim());
-  const seqPractice=/^\s*-?\d+(\s*,\s*-?\d+){1,}\s*$/.test(String(q.practice_answer||""));
+  const seqPractice=/^\s*-?\d+(?:\.\d+)?(\s*,\s*-?\d+(?:\.\d+)?){1,}\s*$/.test(String(q.practice_answer||""));
   const practiceWantsMeridiem=timeNeedsMeridiem({answer:q.practice_answer});
   const v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem)
         : seqPractice ? readSequenceAnswer("practiceSeq",sequenceCount({answer:q.practice_answer}))
