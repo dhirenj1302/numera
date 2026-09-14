@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.91";
+const NUMERA_VERSION = "v2.92";
 const state = {
   files: [],
   sourceImages: [],
@@ -652,7 +652,7 @@ function renderSetterAccess(options={}){
       <h1>${existing?`Welcome back, ${esc(existing.display_name)}`:signInOnly?"Teacher sign in":"Create or manage homework"}</h1>
       <p class="muted">${existing
         ?"Open your dashboard to set and review work."
-        :"Use your teacher username and four-digit PIN. No email address is required for this prototype."}</p>
+        :"Use your teacher username and four-digit PIN. New accounts add an email so you can recover your login if you forget it."}</p>
     </section>
 
     ${existing?`
@@ -675,6 +675,7 @@ function renderSetterAccess(options={}){
             <h2>Create a free teacher account</h2>
             <div class="field"><label>Username</label><input id="newSetterUsername" autocapitalize="none" autocomplete="username" placeholder="e.g. Teacher123"></div>
             <div class="field"><label>Name</label><input id="newSetterName" placeholder="e.g. Thomas"></div>
+            <div class="field"><label>Email</label><input id="newSetterEmail" type="email" autocapitalize="none" autocomplete="email" inputmode="email" placeholder="e.g. you@school.uk"><p class="field-note">Used only to recover your login if you forget it. We won't email you otherwise.</p></div>
             ${pinInput("newSetterPin")}
             <button class="btn green block">Create account</button>
           </form>
@@ -686,10 +687,11 @@ function renderSetterAccess(options={}){
 
 window.createSetter=async e=>{
   e.preventDefault();
-  const username=$("#newSetterUsername").value.trim().toLowerCase(),display_name=$("#newSetterName").value.trim(),pin=$("#newSetterPin").value;
+  const username=$("#newSetterUsername").value.trim().toLowerCase(),display_name=$("#newSetterName").value.trim(),email=$("#newSetterEmail").value.trim().toLowerCase(),pin=$("#newSetterPin").value;
   if(!display_name||!validPin(pin))return alert("Enter a name and four-digit PIN.");
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return alert("Enter a valid email address so you can recover your login later.");
   try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_setter",username,display_name,pin})});
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"create_setter",username,display_name,email,pin})});
     state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));location.hash="#/teacher-dashboard";
   }catch(err){alert(err.message);}
 };
