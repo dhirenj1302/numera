@@ -45,6 +45,13 @@ async function createSetter(db, body, username) {
   if (!USERNAME_RE.test(username) || !PIN_RE.test(body.pin)) {
     return json({ error: "Use a valid username and four-digit PIN." }, { status: 400 });
   }
+  // Email is required at signup so the account can be recovered if the login is
+  // forgotten. Validate gently — just that it looks like an address — to avoid
+  // rejecting valid-but-unusual real addresses.
+  const email = String(body.email || "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return json({ error: "Enter a valid email address so you can recover your login later." }, { status: 400 });
+  }
   const salt = crypto.randomUUID();
   const pinHash = await hashPin(body.pin, salt);
   const token = await sessionToken();
@@ -52,10 +59,10 @@ async function createSetter(db, body, username) {
   await db
     .prepare(
       `INSERT INTO setters
-        (username,display_name,pin_hash,pin_salt,session_token,session_expires)
-       VALUES (?,?,?,?,?,datetime('now',?))`
+        (username,display_name,email,pin_hash,pin_salt,session_token,session_expires)
+       VALUES (?,?,?,?,?,?,datetime('now',?))`
     )
-    .bind(username, String(body.display_name || "").trim(), pinHash, salt, token, SESSION_WINDOW)
+    .bind(username, String(body.display_name || "").trim(), email, pinHash, salt, token, SESSION_WINDOW)
     .run();
 
   return json({ username, display_name: body.display_name, token });
