@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.93";
+const NUMERA_VERSION = "v2.94";
 const state = {
   files: [],
   sourceImages: [],
@@ -872,7 +872,7 @@ async function renderStudentHistory(username){
       <div class="parent-summary-grid"><div class="mini-score"><span>Homeworks</span><strong>${data.summary.homework_count}</strong></div><div class="mini-score"><span>Average original</span><strong>${data.summary.average_original}%</strong></div><div class="mini-score mastery"><span>Average mastery</span><strong>${data.summary.average_mastery}%</strong></div></div>
       ${studentReportMarkup(data)}
       <h2 class="section-label">Completed homework</h2>
-      <div class="history-list">${data.results.map(r=>`<article class="history-card"><div><h3>${esc(r.homework_title)}</h3><p class="muted">${esc(r.topic)} · ${r.original_percent}% original · ${r.mastery_percent}% mastery</p></div><a class="btn secondary" href="#/results?id=${encodeURIComponent(r.homework_id)}">Homework results</a></article>`).join("")||`<div class="empty card">No completed work yet.</div>`}</div>
+      <div class="history-list">${data.results.map(r=>`<article class="history-card"><div><h3>${esc(r.homework_title)}</h3><p class="muted">${esc(r.topic)} · ${r.original_percent}% original · ${r.mastery_percent}% mastery</p>${r.completed_at?`<p class="muted small completed-when">Completed ${friendlyDateTime(r.completed_at)}</p>`:""}</div><a class="btn secondary" href="#/results?id=${encodeURIComponent(r.homework_id)}">Homework results</a></article>`).join("")||`<div class="empty card">No completed work yet.</div>`}</div>
     `,true);
   }catch(err){alert(err.message);location.hash="#/review-access";}
 }
@@ -4375,6 +4375,25 @@ async function renderResults(){
 }
 
 function esc(v=""){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
+
+// Friendly completion time for teacher-facing cards. SQLite stores CURRENT_TIMESTAMP
+// in UTC, so we append "Z" to parse it as UTC (matching the other date renders).
+// Recent items read as "Today at 2:32pm" / "Yesterday" / "3 days ago"; older ones
+// fall back to the full date — the most scannable form for spotting inactivity.
+function friendlyDateTime(ts){
+  try{
+    const d=new Date(String(ts).replace(" ","T")+"Z");
+    if(isNaN(d)) return "";
+    const now=new Date();
+    const startOf=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate());
+    const dayDiff=Math.round((startOf(now)-startOf(d))/86400000);
+    const time=d.toLocaleTimeString("en-GB",{hour:"numeric",minute:"2-digit",hour12:true}).replace(" ","").toLowerCase();
+    if(dayDiff===0) return `today at ${time}`;
+    if(dayDiff===1) return `yesterday at ${time}`;
+    if(dayDiff>1 && dayDiff<7) return `${dayDiff} days ago`;
+    return `on ${d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`;
+  }catch(e){ return ""; }
+}
 function js(v=""){return String(v).replaceAll("\\","\\\\").replaceAll("'","\\'");}
 function formatMath(v=""){return esc(v).replace(/\n/g,"<br>");}
 
