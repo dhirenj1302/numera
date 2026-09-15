@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.92";
+const NUMERA_VERSION = "v2.93";
 const state = {
   files: [],
   sourceImages: [],
@@ -326,6 +326,8 @@ function router() {
   if (path === "/teacher-signin") return renderSetterAccess({mode:"signin"});
   if (path === "/teacher-access") return renderSetterAccess();
   if (path === "/teacher-account") return renderSetterAccess();
+  if (path === "/teacher-forgot") return renderForgotLogin();
+  if (path === "/teacher-reset") return renderResetPin(params.get("token")||"");
   if (path === "/teacher-dashboard") return renderSetterDashboard();
   if (path === "/students-manage") return renderStudentManager();
   if (path === "/review-access") return renderReviewAccess();
@@ -667,6 +669,7 @@ function renderSetterAccess(options={}){
           <div class="field"><label>Username</label><input id="setterUsername" autocapitalize="none" autocomplete="username" placeholder="e.g. Teacher123"></div>
           ${pinInput("setterPin")}
           <button class="btn primary block">Sign in</button>
+          <a class="btn ghost block" href="#/teacher-forgot">Forgot your login?</a>
           ${signInOnly?`<a class="btn ghost block" href="#/teacher-account">Create a teacher account</a>`:""}
         </form>
 
@@ -709,6 +712,76 @@ window.loginSetter=async e=>{
   }catch(err){alert(err.message);}
 };
 window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/teacher-signin";};
+
+function renderForgotLogin(){
+  app.innerHTML=shell(`
+    <section class="mobile-page-head">
+      <span class="step-chip">Teacher account</span>
+      <h1>Forgot your login?</h1>
+      <p class="muted">Enter the email you used when you created your account. We'll email you your username and a link to set a new PIN.</p>
+    </section>
+    <form class="card" onsubmit="requestReset(event)">
+      <div class="field"><label>Email</label><input id="forgotEmail" type="email" autocapitalize="none" autocomplete="email" inputmode="email" placeholder="e.g. you@school.uk"></div>
+      <button class="btn primary block">Email me my login details</button>
+      <a class="btn ghost block" href="#/teacher-signin">Back to sign in</a>
+    </form>
+  `,true);
+}
+
+window.requestReset=async e=>{
+  e.preventDefault();
+  const email=$("#forgotEmail").value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return alert("Enter a valid email address.");
+  try{
+    await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"request_reset",email})});
+  }catch(err){ /* ignore — we show the same message either way */ }
+  // Always show the same neutral confirmation (no account enumeration).
+  app.innerHTML=shell(`
+    <section class="mobile-page-head">
+      <span class="step-chip">Teacher account</span>
+      <h1>Check your email</h1>
+      <p class="muted">If that email is on a Verve Maths account, we've sent your username and a link to set a new PIN. The link is valid for one hour.</p>
+    </section>
+    <div class="card">
+      <p class="muted small">Didn't get it? Check your spam folder, or make sure you used the same email you signed up with.</p>
+      <a class="btn primary block" href="#/teacher-signin">Back to sign in</a>
+    </div>
+  `,true);
+};
+
+function renderResetPin(token){
+  if(!token){
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Teacher account</span><h1>Reset link needed</h1>
+      <p class="muted">Open the "set a new PIN" link from your recovery email to continue.</p></section>
+      <div class="card"><a class="btn primary block" href="#/teacher-forgot">Request a recovery email</a></div>
+    `,true);
+    return;
+  }
+  app.innerHTML=shell(`
+    <section class="mobile-page-head">
+      <span class="step-chip">Teacher account</span>
+      <h1>Set a new PIN</h1>
+      <p class="muted">Choose a new four-digit PIN for your teacher account.</p>
+    </section>
+    <form class="card" onsubmit="submitResetPin(event,'${esc(token)}')">
+      ${pinInput("resetNewPin")}
+      <button class="btn green block">Save new PIN</button>
+      <a class="btn ghost block" href="#/teacher-signin">Back to sign in</a>
+    </form>
+  `,true);
+}
+
+window.submitResetPin=async(e,token)=>{
+  e.preventDefault();
+  const pin=$("#resetNewPin").value;
+  if(!validPin(pin))return alert("Enter a four-digit PIN.");
+  try{
+    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"reset_pin",token,pin})});
+    state.setterSession=session;localStorage.setItem("numera:setterSession",JSON.stringify(session));
+    location.hash="#/teacher-dashboard";
+  }catch(err){alert(err.message);}
+};
 
 function renderSetterDashboard(){
   const s=state.setterSession;
