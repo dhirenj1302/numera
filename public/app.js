@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.94";
+const NUMERA_VERSION = "v2.95";
 const state = {
   files: [],
   sourceImages: [],
@@ -555,7 +555,7 @@ function renderLanding(){
           <a class="l-btn l-btn-primary" href="#/teacher-account">Set a homework</a>
           <a class="l-btn l-btn-ghost" href="#/demo">See a student demo</a>
         </div>
-        <div class="l-trust">✎ No email needed to start &nbsp;·&nbsp; Free for your first class</div>
+        <div class="l-trust">✎ Set up in minutes &nbsp;·&nbsp; Free for your first class</div>
         <div class="l-device">
           <div class="l-screen">
             <div class="l-qcard"><div class="qt">Fractions</div><div class="qn">7/9 − 5/9 = ?</div><span class="l-ok">✓ Correct — first try</span></div>
@@ -590,7 +590,7 @@ function renderLanding(){
 
       <section class="l-final">
         <h2>Ready to stop marking?</h2>
-        <p>Set a homework in the next five minutes. No email, no card, no catch.</p>
+        <p>Set a homework in the next five minutes. No card, no catch.</p>
         <a class="l-btn l-btn-primary" href="#/teacher-account">Set a homework</a>
       </section>
 
