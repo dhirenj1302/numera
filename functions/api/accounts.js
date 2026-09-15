@@ -35,6 +35,12 @@ async function post(context) {
     if (action === "login_student") {
       return loginStudent(db, body, username);
     }
+    if (action === "request_reset") {
+      return requestReset(context, db, body);
+    }
+    if (action === "reset_pin") {
+      return resetPin(db, body);
+    }
     return json({ error: "Unknown action." }, { status: 400 });
   } catch (error) {
     return json({ error: error.message }, { status: 500 });
@@ -90,6 +96,95 @@ async function loginSetter(db, body, username) {
     .run();
 
   return json({ username, display_name: row.display_name, token });
+}
+
+// "Forgot your login?" — the teacher submits their email. If an account has that
+// email, we generate a one-time, time-limited reset token, store it, and email
+// the teacher their USERNAME plus a link to set a new PIN. The PIN itself is
+// hashed and cannot be revealed, so recovery resets it.
+//
+// SECURITY: the response is IDENTICAL whether or not the email exists, so this
+// can't be used to discover which emails have accounts (no user enumeration).
+const RESET_WINDOW = "+1 hour";
+
+async function requestReset(context, db, body) {
+  const email = String(body.email || "").trim().toLowerCase();
+  // Always return the same neutral response, regardless of outcome.
+  const neutral = json({ ok: true });
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return neutral;
+
+  const row = await db.prepare("SELECT username,display_name FROM setters WHERE email=?").bind(email).first();
+  if (!row) return neutral; // unknown email — say nothing revealing
+
+  // Generate and store a one-time reset token.
+  const token = await sessionToken();
+  await db
+    .prepare("UPDATE setters SET reset_token=?,reset_expires=datetime('now',?) WHERE username=?")
+    .bind(token, RESET_WINDOW, row.username)
+    .run();
+
+  // Email the teacher their username + reset link (best-effort via Resend).
+  const apiKey = context.env.RESEND_API_KEY;
+  if (apiKey) {
+    const origin = new URL(context.request.url).origin;
+    const link = `${origin}/#/teacher-reset?token=${encodeURIComponent(token)}`;
+    const from = "Verve Maths <noreply@vervemaths.com>";
+    const subject = "Your Verve Maths login details";
+    const text =
+      `Hello${row.display_name ? " " + row.display_name : ""},\n\n` +
+      `You asked to recover your Verve Maths teacher login.\n\n` +
+      `Your username is: ${row.username}\n\n` +
+      `To set a new PIN, open this link (valid for 1 hour):\n${link}\n\n` +
+      `If you didn't request this, you can ignore this email — your login is unchanged.\n`;
+    const html =
+      `<p>Hello${row.display_name ? " " + escapeHtmlLocal(row.display_name) : ""},</p>` +
+      `<p>You asked to recover your Verve Maths teacher login.</p>` +
+      `<p>Your username is: <strong>${escapeHtmlLocal(row.username)}</strong></p>` +
+      `<p>To set a new PIN, open this link (valid for 1 hour):<br>` +
+      `<a href="${link}">Set a new PIN</a></p>` +
+      `<p>If you didn't request this, you can ignore this email — your login is unchanged.</p>`;
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: [email], subject, text, html })
+      });
+    } catch (mailError) {
+      // Swallow — never reveal delivery success/failure to the caller.
+    }
+  }
+  return neutral;
+}
+
+function escapeHtmlLocal(v) {
+  return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Complete a reset: validate the token, set the new PIN, clear the token, and
+// sign the teacher in (return a fresh session) so they land straight in.
+async function resetPin(db, body) {
+  const token = String(body.token || "").trim();
+  const newPin = String(body.pin || "").trim();
+  if (!token || !PIN_RE.test(newPin)) {
+    return json({ error: "Enter a new four-digit PIN." }, { status: 400 });
+  }
+  const row = await db
+    .prepare("SELECT * FROM setters WHERE reset_token=? AND reset_expires>CURRENT_TIMESTAMP")
+    .bind(token)
+    .first();
+  if (!row) {
+    return json({ error: "This reset link has expired or already been used. Please request a new one." }, { status: 400 });
+  }
+  const salt = crypto.randomUUID();
+  const pinHash = await hashPin(newPin, salt);
+  const sessionTok = await sessionToken();
+  await db
+    .prepare(
+      "UPDATE setters SET pin_hash=?,pin_salt=?,reset_token=NULL,reset_expires=NULL,session_token=?,session_expires=datetime('now',?) WHERE username=?"
+    )
+    .bind(pinHash, salt, sessionTok, SESSION_WINDOW, row.username)
+    .run();
+  return json({ username: row.username, display_name: row.display_name, token: sessionTok });
 }
 
 async function addStudent(db, body) {
