@@ -32,6 +32,9 @@ async function post(context) {
     if (action === "add_student") {
       return addStudent(db, body);
     }
+    if (action === "bulk_add_students") {
+      return bulkAddStudents(db, body);
+    }
     if (action === "login_student") {
       return loginStudent(db, body, username);
     }
@@ -185,6 +188,48 @@ async function resetPin(db, body) {
     .bind(pinHash, salt, sessionTok, SESSION_WINDOW, row.username)
     .run();
   return json({ username: row.username, display_name: row.display_name, token: sessionTok });
+}
+
+// Create many students at once from a teacher-generated class list. Each entry is
+// { username, pin, display_name }. Usernames are generated client-side to be
+// unique and typeable; we still validate each and upsert atomically, and link
+// every one to this setter. Returns which succeeded so the client can show/download
+// the final list. Capped to a sensible class size.
+async function bulkAddStudents(db, body) {
+  const setter = await validSetter(db, body.setter_username, body.token);
+  if (!setter) return json({ error: "Setter session expired." }, { status: 401 });
+
+  const list = Array.isArray(body.students) ? body.students.slice(0, 60) : [];
+  if (!list.length) return json({ error: "No students to add." }, { status: 400 });
+
+  const created = [];
+  const statements = [];
+  for (const s of list) {
+    const username = clean(s.username);
+    const pin = String(s.pin || "").trim();
+    if (!USERNAME_RE.test(username) || !PIN_RE.test(pin)) continue; // skip malformed rows
+    const salt = crypto.randomUUID();
+    const pinHash = await hashPin(pin, salt);
+    statements.push(
+      db.prepare(
+        `INSERT INTO students (username,display_name,pin_hash,pin_salt)
+         VALUES (?,?,?,?)
+         ON CONFLICT(username) DO UPDATE SET
+           display_name=excluded.display_name,
+           pin_hash=excluded.pin_hash,
+           pin_salt=excluded.pin_salt`
+      ).bind(username, String(s.display_name || "").trim(), pinHash, salt)
+    );
+    statements.push(
+      db.prepare(
+        "INSERT OR IGNORE INTO setter_students (setter_username,student_username) VALUES (?,?)"
+      ).bind(setter.username, username)
+    );
+    created.push({ username, display_name: String(s.display_name || "").trim() });
+  }
+  if (!statements.length) return json({ error: "No valid students to add." }, { status: 400 });
+  await db.batch(statements);
+  return json({ ok: true, created });
 }
 
 async function addStudent(db, body) {
