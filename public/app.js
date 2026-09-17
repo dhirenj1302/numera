@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.95";
+const NUMERA_VERSION = "v2.96";
 const state = {
   files: [],
   sourceImages: [],
@@ -330,6 +330,7 @@ function router() {
   if (path === "/teacher-reset") return renderResetPin(params.get("token")||"");
   if (path === "/teacher-dashboard") return renderSetterDashboard();
   if (path === "/students-manage") return renderStudentManager();
+  if (path === "/students-generate") return renderClassGenerator();
   if (path === "/review-access") return renderReviewAccess();
   if (path === "/review-hub") return renderReviewHub();
   if (path === "/student-history") return renderStudentHistory(params.get("username"));
@@ -804,6 +805,7 @@ async function renderStudentManager(){
     const data=await api(`/api/accounts?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
     app.innerHTML=shell(`
       <section class="mobile-page-head"><span class="step-chip">Teacher students</span><h1>Student usernames</h1><p class="muted">Students must use one of these profiles to complete work assigned by this account.</p></section>
+      <a class="btn primary block" href="#/students-generate" style="text-decoration:none;margin-bottom:14px">✨ Generate a whole class at once</a>
       <form class="card" onsubmit="addSetterStudent(event)">
         <h3>Add a student</h3>
         <div class="field-row-mobile"><div class="field"><label>Username</label><input id="managedStudentUsername" placeholder="e.g. User123"></div><div class="field"><label>Name</label><input id="managedStudentName" placeholder="e.g. Thomas"></div></div>
@@ -820,6 +822,85 @@ window.addSetterStudent=async e=>{
   try{
     await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"add_student",setter_username:s.username,token:s.token,student_username:$("#managedStudentUsername").value.trim().toLowerCase(),display_name:$("#managedStudentName").value.trim(),pin})});
     renderStudentManager();
+  }catch(err){alert(err.message);}
+};
+
+// --- Bulk class generator -------------------------------------------------
+// Short, friendly, easy-to-say creature names for usernames. Kept short so a
+// young child can read and type them. Combined with a number + a random 4-digit
+// PIN, collisions are extremely unlikely within a class.
+const CLASS_CREATURES=["ant","bee","cat","cub","doe","elk","fox","hen","jay","kit","owl","pig","pup","ram","rat","bat","cod","dog","eel","emu","fly","gnu","hog","koi","asp","yak","ox","robin","otter","panda","tiger","zebra","koala","gecko","finch","moth","wren","lark","newt","toad","crab","wasp","mole","hare","lynx","seal","swan","dove","crow","frog"];
+
+function makeClassList(count){
+  const rows=[]; const usedU=new Set(); const usedP=new Set();
+  const rnd=n=>Math.floor(Math.random()*n);
+  for(let i=0;i<count;i++){
+    let username;
+    do{ username=`${CLASS_CREATURES[rnd(CLASS_CREATURES.length)]}${10+rnd(90)}`; }while(usedU.has(username));
+    usedU.add(username);
+    let pin;
+    do{ pin=String(1000+rnd(9000)); }while(usedP.has(pin));
+    usedP.add(pin);
+    rows.push({n:i+1,username,pin,name:""});
+  }
+  return rows;
+}
+
+function renderClassGenerator(){
+  const s=state.setterSession;if(!s)return location.hash="#/teacher-signin";
+  state.classList=state.classList||null;
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Teacher students</span><h1>Generate a class</h1>
+    <p class="muted">Choose how many students you need. Verve makes a unique username and PIN for each. Add each child's name, then Submit to add them to your account. You can download the list as a CSV to keep and hand out.</p></section>
+    <div class="card">
+      <div class="field"><label>How many students?</label><input id="classCount" type="number" inputmode="numeric" min="1" max="60" value="${state.classList?state.classList.length:30}"></div>
+      <button class="btn primary block" onclick="generateClass()">${state.classList?"Regenerate list":"Generate list"}</button>
+      ${state.classList?`<p class="muted small" style="margin-top:8px">Regenerating replaces the usernames and PINs below (names you've typed will be kept where possible).</p>`:""}
+    </div>
+    ${state.classList?`
+    <div class="card">
+      <div class="row between"><strong>Class list (${state.classList.length})</strong><button class="btn secondary" onclick="downloadClassCsv()">Download CSV</button></div>
+      <div class="table-wrap" style="margin-top:10px"><table class="class-table"><thead><tr><th>#</th><th>Username</th><th>PIN</th><th>Name</th></tr></thead><tbody>
+        ${state.classList.map((r,i)=>`<tr><td>${r.n}</td><td class="mono">${esc(r.username)}</td><td class="mono">${esc(r.pin)}</td><td><input class="class-name-input" data-row="${i}" value="${esc(r.name)}" placeholder="Child's name" oninput="updateClassName(${i},this.value)"></td></tr>`).join("")}
+      </tbody></table></div>
+      <button class="btn green block" style="margin-top:14px" onclick="submitClass()">Submit — add these students to my account</button>
+      <a class="btn ghost block" href="#/students-manage">Back to students</a>
+    </div>`:`<a class="btn ghost block" href="#/students-manage">Back to students</a>`}
+  `,true);
+}
+
+window.generateClass=()=>{
+  const count=Math.max(1,Math.min(60,parseInt($("#classCount").value,10)||0));
+  const prevNames=(state.classList||[]).map(r=>r.name);
+  state.classList=makeClassList(count);
+  // Preserve any names the teacher already typed, by position.
+  state.classList.forEach((r,i)=>{ if(prevNames[i]) r.name=prevNames[i]; });
+  renderClassGenerator();
+};
+
+window.updateClassName=(i,val)=>{ if(state.classList&&state.classList[i]) state.classList[i].name=val; };
+
+window.downloadClassCsv=()=>{
+  if(!state.classList) return;
+  const esc=v=>{ const s=String(v==null?"":v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
+  const lines=[["Number","Username","PIN","Name"].join(",")]
+    .concat(state.classList.map(r=>[r.n,r.username,r.pin,r.name].map(esc).join(",")));
+  const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="verve-class-list.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+window.submitClass=async()=>{
+  const s=state.setterSession;if(!s)return location.hash="#/teacher-signin";
+  if(!state.classList||!state.classList.length)return;
+  const students=state.classList.map(r=>({username:r.username,pin:r.pin,display_name:r.name||r.username}));
+  try{
+    const res=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"bulk_add_students",setter_username:s.username,token:s.token,students})});
+    const n=(res.created||[]).length;
+    alert(`Added ${n} student${n===1?"":"s"} to your account. Remember to download the CSV so you have the usernames and PINs to hand out.`);
+    location.hash="#/students-manage";
   }catch(err){alert(err.message);}
 };
 
@@ -2619,14 +2700,40 @@ function renderPublished(){
       <button class="btn green block" style="margin-top:14px" onclick="shareHomeworkWhatsApp('${student.replaceAll("'","")}')">Share with parents on WhatsApp</button>
       <button class="btn secondary block" style="margin-top:10px" onclick="shareLink('${student.replaceAll("'","")}')">More sharing options</button>
     </div>
+    <div class="card qr-card">
+      <label>Scan to start</label>
+      <p class="muted small">Put this on the whiteboard — children scan it with a tablet or phone camera to open the homework, then sign in as usual.</p>
+      <div id="homeworkQr" class="qr-holder" aria-label="QR code for the student link"></div>
+      <button class="btn secondary block" onclick="downloadQr('${student.replaceAll("'","")}','${titleSlug||"homework"}')">Download QR image</button>
+    </div>
     <div class="card">
       <label>Teacher results link</label>
       <div class="row" style="margin-top:8px"><input id="resultsLink" readonly value="${results}"><button class="btn secondary" onclick="copyField('resultsLink')">Copy</button></div>
       <a class="btn primary block" style="margin-top:14px;text-decoration:none" href="#/results?id=${h.id}">Open dashboard</a>
     </div>
   `,true);
+  // Draw the QR for the student link (self-contained SVG, no network needed).
+  try{
+    const qrEl=document.getElementById("homeworkQr");
+    if(qrEl && window.makeQrSvg) qrEl.innerHTML=window.makeQrSvg(student,{size:260,margin:4});
+  }catch(e){ /* QR is a bonus; never block the share screen */ }
   showImpactLoop();
 }
+
+// Download the student-link QR as a standalone SVG file the teacher can print or
+// project. Built from the same self-contained generator, so it works offline.
+window.downloadQr=(url,slug)=>{
+  try{
+    if(!window.makeQrSvg) return;
+    const svg=window.makeQrSvg(url,{size:600,margin:4});
+    const blob=new Blob([svg],{type:"image/svg+xml"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`verve-qr-${slug||"homework"}.svg`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }catch(e){ alert("Couldn't create the QR image."); }
+};
 
 // The visible "loop" — the Stories-style "seen by" moment. After the teacher
 // publishes, show their real accumulated impact: questions they've reviewed
