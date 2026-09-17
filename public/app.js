@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.96";
+const NUMERA_VERSION = "v2.97";
 const state = {
   files: [],
   sourceImages: [],
@@ -803,9 +803,11 @@ async function renderStudentManager(){
   app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Loading students…</h2></div>`,true);
   try{
     const data=await api(`/api/accounts?setter_username=${encodeURIComponent(s.username)}&token=${encodeURIComponent(s.token)}`);
+    state.managedStudents=data.students||[];
     app.innerHTML=shell(`
       <section class="mobile-page-head"><span class="step-chip">Teacher students</span><h1>Student usernames</h1><p class="muted">Students must use one of these profiles to complete work assigned by this account.</p></section>
       <a class="btn primary block" href="#/students-generate" style="text-decoration:none;margin-bottom:14px">✨ Generate a whole class at once</a>
+      ${data.students.length?`<button class="btn secondary block" onclick="downloadStudentListCsv()" style="margin-bottom:6px">Download student list (CSV)</button><p class="muted small" style="margin:0 0 14px">Includes usernames and names, but not PINs — PINs are stored securely and can't be retrieved. Keep the CSV you downloaded when you created the class; if a PIN is lost, reset it by re-creating that student.</p>`:""}
       <form class="card" onsubmit="addSetterStudent(event)">
         <h3>Add a student</h3>
         <div class="field-row-mobile"><div class="field"><label>Username</label><input id="managedStudentUsername" placeholder="e.g. User123"></div><div class="field"><label>Name</label><input id="managedStudentName" placeholder="e.g. Thomas"></div></div>
@@ -887,7 +889,32 @@ window.downloadClassCsv=()=>{
     .concat(state.classList.map(r=>[r.n,r.username,r.pin,r.name].map(esc).join(",")));
   const blob=new Blob([lines.join("\n")],{type:"text/csv"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob); a.download="verve-class-list.csv";
+  a.href=URL.createObjectURL(blob); a.download=classCsvFilename();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+// CSV filename: YYYYMMDD_<teacher username>_verve-class-list.csv — so a teacher
+// filing several of these can tell at a glance when and by whom each was made.
+function classCsvFilename(){
+  const d=new Date();
+  const ymd=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  const user=String(state.setterSession?.username||"teacher").replace(/[^a-z0-9]+/gi,"").slice(0,30)||"teacher";
+  return `${ymd}_${user}_verve-class-list.csv`;
+}
+
+// Later re-download of the students already on the account. PINs are hashed and
+// cannot be retrieved, so this list is usernames + names + how much each has
+// completed — NOT PINs. The note on the page explains this to the teacher.
+window.downloadStudentListCsv=()=>{
+  const students=state.managedStudents||[];
+  if(!students.length) return;
+  const esc=v=>{ const s=String(v==null?"":v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
+  const lines=[["Number","Username","Name","Completed homeworks"].join(",")]
+    .concat(students.map((st,i)=>[i+1,st.username,st.display_name,st.submission_count||0].map(esc).join(",")));
+  const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=classCsvFilename().replace("verve-class-list","verve-students");
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
