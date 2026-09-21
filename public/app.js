@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.00";
+const NUMERA_VERSION = "v3.01";
 const state = {
   files: [],
   sourceImages: [],
@@ -332,6 +332,7 @@ function router() {
   if (path === "/students-manage") return renderStudentManager();
   if (path === "/students-generate") return renderClassGenerator();
   if (path === "/admin-kpis") return renderKpiDashboard(params.get("key")||"");
+  if (path === "/admin-school") return renderSchoolReport(params.get("key")||"", params.get("school")||"");
   if (path === "/review-access") return renderReviewAccess();
   if (path === "/review-hub") return renderReviewHub();
   if (path === "/student-history") return renderStudentHistory(params.get("username"));
@@ -911,6 +912,7 @@ async function renderKpiDashboard(key){
       stat("Avg after-mastery score",su.avg_mastery_pct!=null?`${su.avg_mastery_pct}%`:"—","the teaching lift"),
     ])}
 
+    <a class="btn secondary block" href="#/admin-school?key=${encodeURIComponent(key)}">📊 Per-school report (for head teachers)</a>
     <a class="btn ghost block" href="#/admin-kpis?key=${encodeURIComponent(key)}" onclick="setTimeout(()=>location.reload(),0)">Refresh</a>
     ${Array.isArray(d.teacher_list)&&d.teacher_list.length?`
     <h2 class="section-label">Teachers (${d.teacher_list.length})</h2>
@@ -936,6 +938,69 @@ function friendlyDate(ts){
     const opts=d.getFullYear()===new Date().getFullYear()?{day:"numeric",month:"short"}:{day:"numeric",month:"short",year:"numeric"};
     return d.toLocaleDateString("en-GB",opts);
   }catch(e){ return "—"; }
+}
+
+// Per-school pilot report, grouped by teacher email domain. Owner-gated. Shows a
+// school picker, then a funnel → reach → impact story to take to a head teacher.
+async function renderSchoolReport(key,school){
+  if(!key) return renderKpiDashboard("");   // reuse the key prompt
+  if(!school){
+    // School picker.
+    app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Owner</span><h1>Per-school report</h1><p class="muted">Loading schools…</p></section>`,true);
+    let list;
+    try{ list=await api(`/api/kpis?key=${encodeURIComponent(key)}&schools=list`); }
+    catch(err){ app.innerHTML=shell(`<section class="mobile-page-head"><h1>Per-school report</h1><p class="muted" style="color:#c0392b">${esc(err.message)}</p></section><a class="btn ghost block" href="#/admin-kpis?key=${encodeURIComponent(key)}">Back</a>`,true); return; }
+    const schools=list.schools||[];
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>Per-school report</h1>
+      <p class="muted">Schools are grouped by teacher email domain. Pick one to see its pilot report.</p></section>
+      <div class="history-list">${schools.length?schools.map(s=>`<a class="history-card" style="text-decoration:none" href="#/admin-school?key=${encodeURIComponent(key)}&school=${encodeURIComponent(s.domain)}"><div><h3>${esc(s.domain)}</h3><p class="muted">${s.teachers} teacher${s.teachers===1?"":"s"} · first signed up ${friendlyDate(s.first_signup)}</p></div><span class="btn secondary">View report</span></a>`).join(""):`<div class="empty card">No schools with teacher emails yet.</div>`}</div>
+      <a class="btn ghost block" href="#/admin-kpis?key=${encodeURIComponent(key)}">Back to KPIs</a>`,true);
+    return;
+  }
+  // Full report.
+  app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Owner</span><h1>${esc(school)}</h1><p class="muted">Loading report…</p></section>`,true);
+  let d;
+  try{ d=await api(`/api/kpis?key=${encodeURIComponent(key)}&school=${encodeURIComponent(school)}`); }
+  catch(err){ app.innerHTML=shell(`<section class="mobile-page-head"><h1>${esc(school)}</h1><p class="muted" style="color:#c0392b">${esc(err.message)}</p></section><a class="btn ghost block" href="#/admin-school?key=${encodeURIComponent(key)}">Back</a>`,true); return; }
+  const f=d.funnel,u=d.usage,r=d.reach,im=d.impact;
+  const stat=(label,value,sub="")=>`<div class="kpi-stat"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div>${sub?`<div class="kpi-sub">${sub}</div>`:""}</div>`;
+  const group=(title,cards)=>`<h2 class="section-label">${title}</h2><div class="kpi-grid">${cards.join("")}</div>`;
+  const liftStr=im.learning_lift_pts!=null?`+${im.learning_lift_pts} pts`:"—";
+  const span=(u.first_homework&&u.last_homework)?`${friendlyDate(u.first_homework)} → ${friendlyDate(u.last_homework)}`:"—";
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Owner · pilot report</span><h1>${esc(school)}</h1>
+    <p class="muted">A snapshot to share with the school. As of ${new Date(d.generated_at).toLocaleDateString("en-GB")}.</p></section>
+
+    ${group("Adoption",[
+      stat("Teachers signed up",f.teachers),
+      stat("Created a class",f.teachers_with_class),
+      stat("Set a homework",f.teachers_set_hw),
+      stat("Came back for more",`${f.teachers_repeat_pct}%`,`${f.teachers_repeat} set 2+ homeworks`),
+    ])}
+
+    ${group("Usage",[
+      stat("Pupils enrolled",u.classes_pupils),
+      stat("Homeworks set",u.homeworks),
+      stat("Used over",span,"first → latest homework"),
+    ])}
+
+    ${group("Reach to pupils",[
+      stat("Pupils who did work",r.pupils_active,`${r.pupils_active_pct}% of enrolled`),
+      stat("Pieces of work done",r.submissions),
+      stat("Homeworks completed",`${r.completion_pct}%`,`${r.homeworks_completed} of ${u.homeworks} got work back`),
+    ])}
+
+    ${group("Impact",[
+      stat("Answers auto-marked",im.questions_marked),
+      stat("Est. marking time saved",im.est_hours_saved>=1?`~${im.est_hours_saved} hrs`:`~${im.est_minutes_saved} min`,"estimate"),
+      stat("Learning lift",liftStr,im.avg_first_try_pct!=null?`${im.avg_first_try_pct}% → ${im.avg_after_mastery_pct}% after hints`:""),
+      stat("Misconceptions surfaced",im.misconceptions_surfaced,`${im.misconception_instances} instances flagged for teachers`),
+    ])}
+
+    <div class="card"><p class="small muted">Time-saved is an estimate (~15 seconds of marking per answer). Figures cover this school's teachers and pupils only; demo activity is excluded.</p></div>
+    <a class="btn ghost block" href="#/admin-school?key=${encodeURIComponent(key)}">Choose another school</a>
+  `,true);
 }
 
 function renderClassGenerator(){
