@@ -33,6 +33,30 @@ export async function onRequestGet(context) {
       return row ? (Object.values(row)[0] ?? 0) : 0;
     };
 
+    // A school = the domain of a teacher's email (everyone @gardenhouseschool.co.uk
+    // is one school). SQLite has no split, so we derive the domain with substr.
+    const DOMAIN = "lower(substr(email, instr(email,'@')+1))";
+    const NOT_DEMO_H = "(h.settings_json NOT LIKE '%\"demo\":true%')";
+
+    // MODE: list of schools with headline counts (for the picker).
+    if (url.searchParams.get("schools") === "list") {
+      const { results = [] } = await db.prepare(`
+        SELECT ${DOMAIN} domain, COUNT(*) teachers,
+          MIN(created_at) first_signup
+        FROM setters
+        WHERE email IS NOT NULL AND email <> '' AND instr(email,'@') > 0
+        GROUP BY ${DOMAIN}
+        ORDER BY teachers DESC, first_signup ASC
+      `).all().catch(() => ({ results: [] }));
+      return json({ schools: results.map(r => ({ domain: r.domain, teachers: Number(r.teachers||0), first_signup: r.first_signup })) });
+    }
+
+    // MODE: full report for one school (by email domain).
+    const school = (url.searchParams.get("school") || "").trim().toLowerCase();
+    if (school) {
+      return json(await schoolReport(db, school, { one, DOMAIN, NOT_DEMO_H }));
+    }
+
     // --- Teachers ---
     const teachers_total = await one("SELECT COUNT(*) FROM setters");
     const teachers_new_7d = await one(
@@ -173,4 +197,121 @@ export async function onRequestGet(context) {
   } catch (error) {
     return json({ error: error.message }, { status: 500 });
   }
+}
+
+// Per-school report grouped by teacher email domain. Funnel (adoption →
+// activation), reach (pupils), and impact (marking, time saved, learning lift,
+// insights). Everything is scoped to teachers whose email domain matches `school`
+// and, via setter_students / homeworks, to that school's pupils and work.
+// Time-saved figures are ESTIMATES and labelled as such on the report.
+async function schoolReport(db, school, { one, DOMAIN, NOT_DEMO_H }) {
+  const D = DOMAIN; // teacher-domain expression on the `setters` alias `email`
+  const scope = `email IS NOT NULL AND ${D} = ?`;
+
+  // --- Adoption ---
+  const teachers = await one(`SELECT COUNT(*) FROM setters WHERE ${scope}`, school);
+  const teachers_with_class = await one(`
+    SELECT COUNT(DISTINCT ss.setter_username)
+    FROM setter_students ss
+    JOIN setters s ON s.username = ss.setter_username
+    WHERE s.email IS NOT NULL AND lower(substr(s.email, instr(s.email,'@')+1)) = ?`, school);
+  const pupils = await one(`
+    SELECT COUNT(DISTINCT ss.student_username)
+    FROM setter_students ss
+    JOIN setters s ON s.username = ss.setter_username
+    WHERE lower(substr(s.email, instr(s.email,'@')+1)) = ?`, school);
+
+  // Helper: homeworks belonging to this school's teachers (non-demo).
+  const HW_SCOPE = `
+    FROM homeworks h
+    JOIN setters s ON s.username = h.setter_username
+    WHERE ${NOT_DEMO_H} AND s.email IS NOT NULL
+      AND lower(substr(s.email, instr(s.email,'@')+1)) = ?`;
+
+  // --- Activation ---
+  const teachers_set_hw = await one(`SELECT COUNT(DISTINCT h.setter_username) ${HW_SCOPE}`, school);
+  const homeworks = await one(`SELECT COUNT(*) ${HW_SCOPE}`, school);
+  const teachers_repeat = await one(`
+    SELECT COUNT(*) FROM (
+      SELECT h.setter_username ${HW_SCOPE} GROUP BY h.setter_username HAVING COUNT(*) >= 2)`, school);
+  const span = await db.prepare(`
+    SELECT MIN(h.created_at) first_hw, MAX(h.created_at) last_hw ${HW_SCOPE}`).bind(school).first().catch(() => null);
+
+  // --- Reach (pupils + submissions on this school's homeworks) ---
+  const SUB_SCOPE = `
+    FROM submissions sub
+    JOIN homeworks h ON h.id = sub.homework_id
+    JOIN setters s ON s.username = h.setter_username
+    WHERE ${NOT_DEMO_H} AND s.email IS NOT NULL
+      AND lower(substr(s.email, instr(s.email,'@')+1)) = ?`;
+  const submissions = await one(`SELECT COUNT(*) ${SUB_SCOPE}`, school);
+  const pupils_active = await one(`SELECT COUNT(DISTINCT sub.student_username) ${SUB_SCOPE}`, school);
+  const homeworks_completed = await one(`
+    SELECT COUNT(DISTINCT sub.homework_id) ${SUB_SCOPE}`, school);
+
+  // --- Impact ---
+  const questions_marked = await one(`SELECT COALESCE(SUM(sub.total_questions),0) ${SUB_SCOPE}`, school);
+  const avg_original = await one(`
+    SELECT ROUND(AVG(100.0*sub.original_score/NULLIF(sub.total_questions,0))) ${SUB_SCOPE}`, school);
+  const avg_mastery = await one(`
+    SELECT ROUND(AVG(100.0*sub.mastery_score/NULLIF(sub.total_questions,0))) ${SUB_SCOPE}`, school);
+  // Specific misconceptions surfaced for this school's pupils.
+  const misconceptions_surfaced = await one(`
+    SELECT COUNT(DISTINCT le.misconception_tag)
+    FROM learning_events le
+    JOIN homeworks h ON h.id = le.homework_id
+    JOIN setters s ON s.username = h.setter_username
+    WHERE le.misconception_tag IS NOT NULL AND le.misconception_tag <> ''
+      AND ${NOT_DEMO_H} AND s.email IS NOT NULL
+      AND lower(substr(s.email, instr(s.email,'@')+1)) = ?`, school).catch(() => 0);
+  const misconception_instances = await one(`
+    SELECT COUNT(*)
+    FROM learning_events le
+    JOIN homeworks h ON h.id = le.homework_id
+    JOIN setters s ON s.username = h.setter_username
+    WHERE le.misconception_tag IS NOT NULL AND le.misconception_tag <> ''
+      AND ${NOT_DEMO_H} AND s.email IS NOT NULL
+      AND lower(substr(s.email, instr(s.email,'@')+1)) = ?`, school).catch(() => 0);
+
+  // Estimated teacher time saved from auto-marking. Deliberately conservative:
+  // ~15 seconds of marking per question answered. Shown as an estimate.
+  const minutes_saved = Math.round((Number(questions_marked) * 15) / 60);
+
+  const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+  const lift = (avg_mastery != null && avg_original != null) ? (avg_mastery - avg_original) : null;
+
+  return {
+    school,
+    generated_at: new Date().toISOString(),
+    funnel: {
+      teachers,
+      teachers_with_class,
+      teachers_set_hw,
+      teachers_repeat,
+      teachers_repeat_pct: pct(teachers_repeat, teachers_set_hw),
+    },
+    usage: {
+      classes_pupils: pupils,
+      homeworks,
+      first_homework: span ? span.first_hw : null,
+      last_homework: span ? span.last_hw : null,
+    },
+    reach: {
+      pupils_active,
+      pupils_active_pct: pct(pupils_active, pupils),
+      submissions,
+      homeworks_completed,
+      completion_pct: pct(homeworks_completed, homeworks),
+    },
+    impact: {
+      questions_marked: Number(questions_marked),
+      est_hours_saved: Math.round(minutes_saved / 60 * 10) / 10,
+      est_minutes_saved: minutes_saved,
+      avg_first_try_pct: avg_original,
+      avg_after_mastery_pct: avg_mastery,
+      learning_lift_pts: lift,
+      misconceptions_surfaced: Number(misconceptions_surfaced),
+      misconception_instances: Number(misconception_instances),
+    },
+  };
 }
