@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.98";
+const NUMERA_VERSION = "v3.00";
 const state = {
   files: [],
   sourceImages: [],
@@ -912,7 +912,30 @@ async function renderKpiDashboard(key){
     ])}
 
     <a class="btn ghost block" href="#/admin-kpis?key=${encodeURIComponent(key)}" onclick="setTimeout(()=>location.reload(),0)">Refresh</a>
+    ${Array.isArray(d.teacher_list)&&d.teacher_list.length?`
+    <h2 class="section-label">Teachers (${d.teacher_list.length})</h2>
+    <p class="muted small" style="margin:0 0 8px">Newest first. "Last active" = their most recent homework set or submission received.</p>
+    <div class="table-wrap"><table class="class-table kpi-teacher-table"><thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Signed up</th><th>HW</th><th>Last active</th></tr></thead><tbody>
+      ${d.teacher_list.map(t=>`<tr>
+        <td>${esc(t.name||"—")}</td>
+        <td class="mono">${esc(t.username)}</td>
+        <td>${esc(t.email||"—")}</td>
+        <td>${t.signed_up?esc(friendlyDate(t.signed_up)):"—"}</td>
+        <td style="text-align:center;${t.homeworks===0?"color:#c0392b;font-weight:700":""}">${t.homeworks}</td>
+        <td>${t.last_active?esc(friendlyDate(t.last_active)):'<span style="color:#c0392b">never</span>'}</td>
+      </tr>`).join("")}
+    </tbody></table></div>`:""}
   `,true);
+}
+
+// Short date for admin tables: "17 Sep" / "17 Sep 2025" if not this year.
+function friendlyDate(ts){
+  try{
+    const d=new Date(String(ts).replace(" ","T")+"Z");
+    if(isNaN(d)) return "—";
+    const opts=d.getFullYear()===new Date().getFullYear()?{day:"numeric",month:"short"}:{day:"numeric",month:"short",year:"numeric"};
+    return d.toLocaleDateString("en-GB",opts);
+  }catch(e){ return "—"; }
 }
 
 function renderClassGenerator(){
@@ -1052,6 +1075,48 @@ async function renderStudentHistory(username){
   }catch(err){alert(err.message);location.hash="#/review-access";}
 }
 
+// Teacher-vetting editor for a question's diagnosed misconceptions. Shows each as
+// a plain description + the specific wrong answer that triggers it, both editable,
+// with a remove. When a child later gives that wrong answer, it's tagged with this
+// misconception and surfaced on the child's profile.
+function misconceptionEditor(q,i){
+  const list=Array.isArray(q.misconceptions)?q.misconceptions:[];
+  const rows=list.map((m,mi)=>`<div class="mis-row">
+    <input class="mis-desc" value="${esc(m.description||"")}" placeholder="What the child misunderstands" oninput="editMisconception(${i},${mi},'description',this.value)">
+    <input class="mis-wrong" value="${esc(m.wrong_answer||"")}" placeholder="Wrong answer" oninput="editMisconception(${i},${mi},'wrong_answer',this.value)">
+    <button type="button" class="mis-remove" title="Remove" onclick="removeMisconception(${i},${mi})">✕</button>
+  </div>`).join("");
+  return `<div class="mis-editor"><label>Likely misconceptions <span class="label-note">what a wrong answer would tell you about this child</span></label>
+    <p class="small muted" style="margin:2px 0 6px">When a child gives one of these wrong answers, it's recorded on their profile so you can see exactly what they don't understand.</p>
+    ${rows||`<p class="small muted">None suggested for this question.</p>`}
+    <button type="button" class="btn ghost small" onclick="addMisconception(${i})">+ Add a misconception</button></div>`;
+}
+window.editMisconception=(i,mi,field,val)=>{
+  const q=state.draft.questions[i]; if(!q||!Array.isArray(q.misconceptions)||!q.misconceptions[mi]) return;
+  q.misconceptions[mi][field]=val;
+};
+window.removeMisconception=(i,mi)=>{
+  const q=state.draft.questions[i]; if(!q||!Array.isArray(q.misconceptions)) return;
+  q.misconceptions.splice(mi,1); renderReview();
+};
+window.addMisconception=(i)=>{
+  const q=state.draft.questions[i]; if(!q) return;
+  q.misconceptions=Array.isArray(q.misconceptions)?q.misconceptions:[];
+  q.misconceptions.push({tag:"custom-"+Date.now().toString(36),description:"",wrong_answer:""});
+  renderReview();
+};
+
+// Prefer the teacher-friendly description; fall back to a humanised tag
+// ("adds-denominators" -> "Adds denominators") if no description was stored.
+function misconceptionLabel(m){
+  const d=(m&&m.misconception_desc||"").trim();
+  if(d) return d;
+  const t=(m&&m.misconception_tag||"").trim();
+  if(!t) return "an unclear error";
+  const s=t.replace(/[-_]+/g," ").trim();
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+
 // Age-typical misconceptions, keyed to topic keywords. These are GENERAL and
 // clearly labelled as "common at this age" — never presented as a diagnosis of
 // this particular child. Once real per-child misconception tagging is live
@@ -1167,7 +1232,7 @@ function studentReportMarkup(data){
   // with their scores. Never a vague or invented diagnosis.
   let focusLine="";
   if(r.has_misconception_tagging && r.observed_misconceptions.length){
-    const top=r.observed_misconceptions.slice(0,2).map(m=>`${esc(m.misconception_tag)}${m.concept_key?` (in ${esc(m.concept_key)})`:""}`).join(" and ");
+    const top=r.observed_misconceptions.slice(0,2).map(m=>`${esc(misconceptionLabel(m))}${m.concept_key?` (in ${esc(m.concept_key)})`:""}`).join(" and ");
     focusLine=`<div class="report-focus"><span class="report-focus-tag">Where mistakes cluster</span> ${name}'s errors most often show up as <strong>${top}</strong>. That's the most useful thing to work on next.</div>`;
   }else if(r.weakest_topics && r.weakest_topics.length){
     const w=r.weakest_topics.filter(t=>t.avg_mastery<75).slice(0,2);
@@ -1194,7 +1259,7 @@ function studentReportMarkup(data){
   // --- Real per-child misconceptions (only if tagging has populated them) ---
   let observedBlock="";
   if(r.has_misconception_tagging && r.observed_misconceptions.length){
-    observedBlock=`<div class="report-sub"><h3>Specific patterns seen in ${name}'s answers</h3>${r.observed_misconceptions.slice(0,4).map(m=>`<div class="mis-observed"><strong>${esc(m.misconception_tag)}</strong> — seen ${m.occurrences} time${m.occurrences===1?"":"s"}${m.concept_key?` in ${esc(m.concept_key)}`:""}.</div>`).join("")}</div>`;
+    observedBlock=`<div class="report-sub"><h3>Specific patterns seen in ${name}'s answers</h3>${r.observed_misconceptions.slice(0,4).map(m=>`<div class="mis-observed"><strong>${esc(misconceptionLabel(m))}</strong> — seen ${m.occurrences} time${m.occurrences===1?"":"s"}${m.concept_key?` in ${esc(m.concept_key)}`:""}.</div>`).join("")}</div>`;
   }
 
   // --- Age-typical watch-points, keyed to the topics actually attempted ---
@@ -2256,7 +2321,7 @@ function questionEditor(q,i){
         ${questionHintTiers(q).map((hint,hi)=>`<div class="field hint-editor-field"><label>Hint ${hi+1}: ${esc(hintTierName(hi+1))}</label><textarea data-hint-i="${hi}" rows="${hi===3?3:2}">${esc(hint)}</textarea></div>`).join("")}
       </div>
       <div class="field"><label>Feedback after an incorrect submitted answer</label><textarea data-k="explanation" rows="3">${esc(q.explanation||"")}</textarea></div>
-      <details class="advanced-fields"><summary>More teaching settings</summary><div class="field"><label>Topic</label><input data-k="topic" value="${esc(q.topic||state.draft.topic||"Mixed maths")}"></div><div class="field"><label>Similar practice question</label><input data-k="practice_prompt" value="${esc(q.practice_prompt||"")}"></div><div class="field"><label>Practice answer</label><input data-k="practice_answer" value="${esc(String(q.practice_answer??""))}"></div></details>
+      <details class="advanced-fields"><summary>More teaching settings</summary><div class="field"><label>Topic</label><input data-k="topic" value="${esc(q.topic||state.draft.topic||"Mixed maths")}"></div><div class="field"><label>Similar practice question</label><input data-k="practice_prompt" value="${esc(q.practice_prompt||"")}"></div><div class="field"><label>Practice answer</label><input data-k="practice_answer" value="${esc(String(q.practice_answer??""))}"></div>${misconceptionEditor(q,i)}</details>
       <button type="button" class="btn danger block" onclick="deleteQuestion(${i})">Remove this question</button>
     </div>
   </details>`;
