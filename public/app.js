@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.01";
+const NUMERA_VERSION = "v3.03";
 const state = {
   files: [],
   sourceImages: [],
@@ -559,6 +559,7 @@ function renderLanding(){
           <a class="l-btn l-btn-ghost" href="#/demo">See a student demo</a>
         </div>
         <div class="l-trust">✎ Set up in minutes &nbsp;·&nbsp; Free for your first class</div>
+        <div class="l-guide-link"><a href="/guide" target="_blank" rel="noopener">New to Verve? Read the 2-minute teacher guide →</a></div>
         <div class="l-device">
           <div class="l-screen">
             <div class="l-qcard"><div class="qt">Fractions</div><div class="qn">7/9 − 5/9 = ?</div><span class="l-ok">✓ Correct — first try</span></div>
