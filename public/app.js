@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v2.97";
+const NUMERA_VERSION = "v2.98";
 const state = {
   files: [],
   sourceImages: [],
@@ -331,6 +331,7 @@ function router() {
   if (path === "/teacher-dashboard") return renderSetterDashboard();
   if (path === "/students-manage") return renderStudentManager();
   if (path === "/students-generate") return renderClassGenerator();
+  if (path === "/admin-kpis") return renderKpiDashboard(params.get("key")||"");
   if (path === "/review-access") return renderReviewAccess();
   if (path === "/review-hub") return renderReviewHub();
   if (path === "/student-history") return renderStudentHistory(params.get("username"));
@@ -846,6 +847,72 @@ function makeClassList(count){
     rows.push({n:i+1,username,pin,name:""});
   }
   return rows;
+}
+
+// --- Owner KPI dashboard -------------------------------------------------
+// Business health metrics for the platform owner, gated by the OWNER_KEY secret
+// (entered here, passed to /api/kpis). Read-only. Not linked from anywhere in the
+// normal UI — reach it at #/admin-kpis.
+async function renderKpiDashboard(key){
+  if(!key){
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>KPI dashboard</h1>
+      <p class="muted">Enter the owner key to view platform metrics.</p></section>
+      <form class="card" onsubmit="event.preventDefault();location.hash='#/admin-kpis?key='+encodeURIComponent(document.getElementById('kpiKey').value.trim())">
+        <div class="field"><label>Owner key</label><input id="kpiKey" type="password" autocomplete="off" placeholder="OWNER_KEY"></div>
+        <button class="btn primary block">View dashboard</button>
+      </form>`,true);
+    return;
+  }
+  app.innerHTML=shell(`<section class="mobile-page-head"><span class="step-chip">Owner</span><h1>KPI dashboard</h1><p class="muted">Loading…</p></section>`,true);
+  let d;
+  try{
+    d=await api(`/api/kpis?key=${encodeURIComponent(key)}`);
+  }catch(err){
+    app.innerHTML=shell(`
+      <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>KPI dashboard</h1>
+      <p class="muted" style="color:#c0392b">${esc(err.message||"Couldn't load metrics.")}</p></section>
+      <a class="btn ghost block" href="#/admin-kpis">Try a different key</a>`,true);
+    return;
+  }
+  const stat=(label,value,sub="")=>`<div class="kpi-stat"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div>${sub?`<div class="kpi-sub">${sub}</div>`:""}</div>`;
+  const group=(title,cards)=>`<h2 class="section-label">${title}</h2><div class="kpi-grid">${cards.join("")}</div>`;
+  const t=d.teachers,st=d.students,h=d.homeworks,su=d.submissions;
+  app.innerHTML=shell(`
+    <section class="mobile-page-head"><span class="step-chip">Owner</span><h1>KPI dashboard</h1>
+    <p class="muted">Platform health at a glance. Demo homeworks are excluded. As of ${new Date(d.generated_at).toLocaleString("en-GB")}.</p></section>
+
+    ${group("Teachers",[
+      stat("Total accounts",t.total),
+      stat("New (7 days)",t.new_7d),
+      stat("Active (7 days)",t.active_7d,"set or received work"),
+      stat("Set ≥1 homework",t.set_homework),
+      stat("Set a 2nd homework",`${t.repeat_2plus_pct}%`,`${t.repeat_2plus} of ${t.set_homework}`),
+      stat("Set a 3rd homework",`${t.repeat_3plus_pct}%`,`${t.repeat_3plus} of ${t.set_homework}`),
+      stat("Avg days to 2nd HW",t.avg_days_to_second||"—"),
+    ])}
+
+    ${group("Students",[
+      stat("Total accounts",st.total),
+      stat("Submitted work",st.active,`${st.active_pct}% of accounts`),
+    ])}
+
+    ${group("Homeworks",[
+      stat("Total set",h.total),
+      stat("Set (7 days)",h.last_7d),
+      stat("With a submission",`${h.completion_pct}%`,`${h.completed} of ${h.total}`),
+      stat("Per active teacher",h.per_active_teacher),
+    ])}
+
+    ${group("Engagement & outcomes",[
+      stat("Submissions total",su.total),
+      stat("Submissions (7 days)",su.last_7d),
+      stat("Avg first-try score",su.avg_original_pct!=null?`${su.avg_original_pct}%`:"—"),
+      stat("Avg after-mastery score",su.avg_mastery_pct!=null?`${su.avg_mastery_pct}%`:"—","the teaching lift"),
+    ])}
+
+    <a class="btn ghost block" href="#/admin-kpis?key=${encodeURIComponent(key)}" onclick="setTimeout(()=>location.reload(),0)">Refresh</a>
+  `,true);
 }
 
 function renderClassGenerator(){
