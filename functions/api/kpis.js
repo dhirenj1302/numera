@@ -108,6 +108,35 @@ export async function onRequestGet(context) {
 
     const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
 
+    // Per-teacher list with activity, newest signups first (cap 200). Last-active
+    // = the most recent of (their newest real homework, their newest submission
+    // received). Homeworks counted exclude demos.
+    const { results: teacherRows = [] } = await db.prepare(`
+      SELECT s.username, s.display_name, s.email, s.created_at,
+        (SELECT COUNT(*) FROM homeworks h
+           WHERE h.setter_username = s.username AND (h.settings_json NOT LIKE '%"demo":true%')) hw_count,
+        (SELECT MAX(x) FROM (
+           SELECT MAX(h.created_at) x FROM homeworks h
+             WHERE h.setter_username = s.username AND (h.settings_json NOT LIKE '%"demo":true%')
+           UNION ALL
+           SELECT MAX(sub.completed_at) x FROM submissions sub
+             JOIN homeworks h2 ON h2.id = sub.homework_id
+             WHERE h2.setter_username = s.username
+        )) last_active
+      FROM setters s
+      ORDER BY s.created_at DESC
+      LIMIT 200
+    `).all().catch(() => ({ results: [] }));
+
+    const teacher_list = teacherRows.map(r => ({
+      username: r.username,
+      name: r.display_name || "",
+      email: r.email || "",
+      signed_up: r.created_at,
+      homeworks: Number(r.hw_count || 0),
+      last_active: r.last_active || null,
+    }));
+
     return json({
       generated_at: new Date().toISOString(),
       teachers: {
@@ -139,6 +168,7 @@ export async function onRequestGet(context) {
         avg_original_pct: avg_original,
         avg_mastery_pct: avg_mastery,
       },
+      teacher_list,
     });
   } catch (error) {
     return json({ error: error.message }, { status: 500 });
