@@ -81,7 +81,7 @@ const pageSchema = {
       items:{
         type:"object",
         additionalProperties:false,
-        required:["type","prompt","answer","options","hint","hints","explanation","topic","difficulty","year_group","question_type","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","grid_rows","grid_cols","shade_fraction","parts"],
+        required:["type","prompt","answer","options","hint","hints","explanation","topic","difficulty","year_group","question_type","practice_prompt","practice_answer","needs_visual","visual_bbox","requires_teacher_check","misconceptions","answer_working","answer_unit","point_answer","coordinate_answer","grid_bounds","grid_step","matching_left","matching_right","matching_pairs","denominator","drag_item_count","clock_start","angle_start","angle_tolerance","drawing_rubric","grid_rows","grid_cols","shade_fraction","parts"],
         properties:{
           type:{type:"string",enum:["number","time","multiple_choice","drawing","point","coordinate","matching","fraction","fraction_visual","drag","clock","angle","shade","sequence","coins","multipart"]},
           prompt:{type:"string"},
@@ -104,6 +104,7 @@ const pageSchema = {
             items:{type:"number"}
           },
           requires_teacher_check:{type:"boolean"},
+          misconceptions:{type:"array",items:{type:"object",additionalProperties:false,required:["tag","description","wrong_answer"],properties:{tag:{type:"string"},description:{type:"string"},wrong_answer:{type:"string"}}}},
           answer_working:{type:"string"}, answer_unit:{type:"string"},
           point_answer:{type:"array",minItems:2,maxItems:2,items:{type:"number"}},
           coordinate_answer:{type:"array",minItems:2,maxItems:2,items:{type:"number"}},
@@ -673,6 +674,12 @@ Double-check elapsed-time sums (9:10 a.m. to 12:00 noon = 170 minutes, not 110).
 - difficulty: the demand of THIS question relative to that year: "foundation" (simplest, early in the topic), "developing" (typical practice), "secure" (full expectation), or "greater_depth" (stretch / multi-step / reasoning beyond the basic skill).
 - question_type: "fluency" (a bare calculation or recall), "reasoning" (explain / compare / spot the pattern), or "word_problem" (a real-world scenario in words).
 These are best-effort tags for organising a question library; the teacher can change any of them, so never let tagging change the transcription of the question itself.
+
+9g. DIAGNOSE LIKELY MISCONCEPTIONS (for teacher insight). For each question, populate the "misconceptions" array with the 1–4 MOST LIKELY specific misconceptions a primary pupil could have that would make them get THIS question wrong. Each entry has three fields:
+- tag: a short, stable, lowercase-hyphenated identifier for the misconception, reusable across questions (e.g. "adds-denominators", "forgets-to-regroup", "place-value-confusion", "subtracts-smaller-from-larger-per-column", "counts-fenceposts").
+- description: one plain-English sentence a teacher would understand, naming the specific thing the child doesn't understand (e.g. "Adds the denominators together instead of finding a common denominator").
+- wrong_answer: the EXACT answer a pupil would type/give if they made THIS specific error, in the same format as the correct answer (e.g. for 1/2 + 1/3 with misconception "adds across", wrong_answer "2/5"; for "added the numerators over the common denominator but forgot to convert", the specific wrong value). Work out what that error actually produces — this is used to auto-detect the misconception when a child gives that answer, so it must be the precise value.
+Rules: only include misconceptions whose wrong_answer you can compute concretely and that differ from the correct answer and from each other. Order them most-likely first. If a question genuinely has no predictable specific wrong answers (e.g. an open drawing task), return an empty array. These are best-effort and the teacher can edit them; never let this change the question or its correct answer.
 19. Every returned question must include every schema field. For fields that do not apply, use these neutral values:
 - point_answer: [0,0]
 - coordinate_answer: [0,0]

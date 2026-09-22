@@ -125,7 +125,7 @@ async function studentHistory(context, db, setter, studentUsername, url) {
   // Real misconception tallies — populated only once tagging exists. Empty today.
   const { results: misconceptions = [] } = await db
     .prepare(
-      `SELECT misconception_tag, concept_key, COUNT(*) occurrences
+      `SELECT misconception_tag, MAX(misconception_desc) misconception_desc, concept_key, COUNT(*) occurrences
        FROM learning_events
        WHERE student_username = ?
          AND misconception_tag IS NOT NULL AND misconception_tag <> ''

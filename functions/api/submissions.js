@@ -55,6 +55,34 @@ function evidenceFromAttempt(attempt){
   return {evidence_score:0.18,evidence_weight:0.90,evidence_type:level?`not_yet_mastered_hint_${level}`:"not_yet_mastered",understanding_state:"priority"};
 }
 
+// Match a wrong first answer to one of the question's pre-diagnosed misconceptions
+// (generated at extraction time). Deterministic, normalised string comparison —
+// no AI at mark time. Returns the misconception tag, or null if correct / no match.
+function normaliseAns(v){
+  return String(v==null?"":v).trim().toLowerCase()
+    .replace(/[£$\s]/g,"")           // drop currency symbols and spaces
+    .replace(/(p|cm|mm|ml|kg|g|m)$/,"") // drop a trailing unit
+    .replace(/\.0+$/,"");            // 3.0 -> 3
+}
+function diagnoseMisconception(question,attempt){
+  try{
+    if(!question || !attempt) return null;
+    if(attempt.first_correct===true) return null;        // only wrong first answers
+    const list=Array.isArray(question.misconceptions)?question.misconceptions:[];
+    if(!list.length) return null;
+    const given=normaliseAns(attempt.first_answer);
+    if(!given) return null;
+    const correct=normaliseAns(question.answer);
+    for(const m of list){
+      if(!m || !m.wrong_answer || !m.tag) continue;
+      const wrong=normaliseAns(m.wrong_answer);
+      if(!wrong || wrong===correct) continue;            // ignore degenerate entries
+      if(given===wrong) return {tag:String(m.tag).slice(0,80),desc:String(m.description||"").slice(0,300)};
+    }
+    return null;
+  }catch(e){ return null; }
+}
+
 function nextReviewDate(score){
   const days=score>=85?28:score>=70?14:score>=50?7:2;
   const date=new Date(Date.now()+days*86400000);
@@ -72,6 +100,12 @@ async function updateUnderstanding(context,{submissionId,homework,username,attem
     const evidence=evidenceFromAttempt(attempt);
     const masteryScore=Math.round(evidence.evidence_score*100);
     const eventId=crypto.randomUUID();
+    // On a wrong first answer, try to match it to one of the question's
+    // pre-diagnosed misconceptions (from extraction). Deterministic string match
+    // of the child's actual answer against each misconception's wrong_answer.
+    const misconceptionMatch=diagnoseMisconception(question,attempt);
+    const misconceptionTag=misconceptionMatch?misconceptionMatch.tag:null;
+    const misconceptionDesc=misconceptionMatch?misconceptionMatch.desc:null;
 
     statements.push(
       context.env.DB.prepare(`
@@ -95,8 +129,8 @@ async function updateUnderstanding(context,{submissionId,homework,username,attem
           (id,student_username,submission_id,homework_id,question_index,
            concept_key,evidence_type,evidence_score,evidence_weight,
            first_correct,hint_used,highest_hint_level,hint_count,
-           seconds_before_first_hint,retries,mastered,understanding_state)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           seconds_before_first_hint,retries,mastered,understanding_state,misconception_tag,misconception_desc)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
         eventId,username,submissionId,homework.id,i,
         concept.concept_key,evidence.evidence_type,evidence.evidence_score,
@@ -106,7 +140,7 @@ async function updateUnderstanding(context,{submissionId,homework,username,attem
         Math.max(0,Number(attempt.hint_count)||0),
         attempt.seconds_before_first_hint==null?null:Math.max(0,Number(attempt.seconds_before_first_hint)||0),
         Number(attempt.retries)||0,
-        attempt.mastered===true?1:0,evidence.understanding_state
+        attempt.mastered===true?1:0,evidence.understanding_state,misconceptionTag,misconceptionDesc
       )
     );
 
