@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.04";
+const NUMERA_VERSION = "v3.05";
 const state = {
   files: [],
   sourceImages: [],
@@ -1145,6 +1145,48 @@ async function renderStudentHistory(username){
 // a plain description + the specific wrong answer that triggers it, both editable,
 // with a remove. When a child later gives that wrong answer, it's tagged with this
 // misconception and surfaced on the child's profile.
+// Teacher editor for an abacus question. Lets the teacher set the columns and the
+// correct bead count per column, editing on a rendered abacus (+/−). This is also
+// where a teacher CORRECTS the AI's photo-read: if the question came from an image
+// (abacus_state), it's pre-filled here for checking. Writes back to q.answer.
+function abacusTeacherEditor(q,i){
+  const cols=String(q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const ans=parseAbacusEd(q.answer);
+  const colInputs=`<div class="field"><label>Columns (left to right)</label><input value="${esc(cols.join(", "))}" oninput="setAbacusCols(${i},this.value)" placeholder="e.g. hundreds, tens, ones"></div>`;
+  const rods=cols.map(c=>`<div class="abacus-col"><div class="abacus-rod abacus-rod-static"><span class="abacus-beads">${Array.from({length:Math.max(0,Math.min(9,ans[c]||0))},()=>'<span class="abacus-bead"></span>').join("")}</span></div><div class="abacus-ed-controls"><button type="button" onclick="editAbacusBead(${i},'${c}',1)">+</button><span>${ans[c]||0}</span><button type="button" onclick="editAbacusBead(${i},'${c}',-1)">&minus;</button></div><span class="abacus-colname">${esc(c)}</span></div>`).join("");
+  return `<div class="mis-editor"><label>Correct abacus answer <span class="label-note">the beads the pupil should place</span></label>
+    ${q.abacus_state?`<p class="small muted" style="margin:2px 0 6px">Read from the worksheet image — please check each column's bead count is right.</p>`:""}
+    ${colInputs}
+    <div class="abacus-frame abacus-frame-static" style="margin-top:8px">${rods}</div></div>`;
+}
+function parseAbacusEd(str){
+  const m={};
+  String(str||"").split(",").forEach(part=>{
+    const bits=part.split(":").map(s=>(s||"").trim().toLowerCase());
+    if(bits[0]){ const n=parseInt(bits[1],10); m[bits[0]]=Number.isFinite(n)?n:0; }
+  });
+  return m;
+}
+function writeAbacusAnswer(i){
+  const q=state.draft.questions[i];
+  const cols=String(q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const m=parseAbacusEd(q.answer);
+  q.answer=cols.map(c=>`${c}:${m[c]||0}`).join(",");
+}
+window.setAbacusCols=(i,val)=>{
+  const q=state.draft.questions[i]; if(!q) return;
+  q.abacus_columns=val.split(",").map(s=>s.trim().toLowerCase()).filter(Boolean).join(",");
+  writeAbacusAnswer(i); renderReview();
+};
+window.editAbacusBead=(i,c,delta)=>{
+  const q=state.draft.questions[i]; if(!q) return;
+  const m=parseAbacusEd(q.answer);
+  m[c]=Math.max(0,Math.min(9,(m[c]||0)+delta));
+  const cols=String(q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  q.answer=cols.map(x=>`${x}:${m[x]||0}`).join(",");
+  renderReview();
+};
+
 function misconceptionEditor(q,i){
   const list=Array.isArray(q.misconceptions)?q.misconceptions:[];
   const rows=list.map((m,mi)=>`<div class="mis-row">
@@ -2342,7 +2384,7 @@ function questionEditor(q,i){
       </div>
       <div class="field"><label>Question</label><textarea data-k="prompt" rows="3" onblur="maybeAutoDrawing(${i})">${esc(q.prompt)}</textarea></div>
       <div class="field-row-mobile">
-        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="fraction" ${q.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="coins" ${q.type==="coins"?"selected":""}>Coins (tap coins to make an amount)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
+        <div class="field"><label>Answer type</label><select data-k="type" onchange="this.dataset.userChanged='1'"><option value="number" ${q.type==="number"?"selected":""}>Type an answer</option><option value="fraction" ${q.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${q.type==="time"?"selected":""}>Time (hour and minutes)</option><option value="multiple_choice" ${q.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="drawing" ${q.type==="drawing"?"selected":""}>Draw line(s) on image</option><option value="point" ${q.type==="point"?"selected":""}>Select a point on a grid</option><option value="coordinate" ${q.type==="coordinate"?"selected":""}>Enter a coordinate pair</option><option value="matching" ${q.type==="matching"?"selected":""}>Connect matching items</option><option value="sequence" ${q.type==="sequence"?"selected":""}>Number sequence (several numbers)</option><option value="coins" ${q.type==="coins"?"selected":""}>Coins (tap coins to make an amount)</option><option value="abacus" ${q.type==="abacus"?"selected":""}>Abacus (tap columns to add beads)</option><option value="shade" ${q.type==="shade"?"selected":""}>Shade a fraction of a grid</option><option value="multipart" ${q.type==="multipart"?"selected":""}>Multiple parts (a, b…)</option></select></div>
         <div class="field"><label>Correct answer</label><input data-k="answer" value="${esc(String(q.answer))}"></div>
       </div>
       <div class="field"><label>Answer unit <span class="label-note">shown beside the input</span></label><input data-k="answer_unit" value="${esc(q.answer_unit||"")}" placeholder="e.g. ml, cm, children"></div>
@@ -2350,6 +2392,7 @@ function questionEditor(q,i){
       ${q.malformed_warning?`<div class="notice multipart-warning"><strong>Please check this question:</strong> ${esc(q.malformed_warning)}</div>`:""}
       ${q.ops_warning?`<div class="notice multipart-warning"><strong>Check the signs:</strong> ${esc(q.ops_warning)}</div>`:""}
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
+      ${q.type==="abacus"?abacusTeacherEditor(q,i):""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
       ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="fraction" ${p.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
 
@@ -3279,6 +3322,89 @@ function coinsIsCorrect(given,answer){
   return true;
 }
 
+// ---- Abacus / place-value spike answer type ----------------------------
+// Columns are flexible (ones, tens, hundreds, thousands), set by teacher/AI via
+// abacus_columns (comma list, left-to-right). Answer is bead counts as
+// "label:count" pairs, e.g. "tens:5,ones:2". One widget, two modes: (a) pupil
+// taps columns to add beads; (b) a filled abacus (abacus_state) is shown as a
+// read-only reference the pupil copies — still marked on bead counts.
+function abacusColumns(q){
+  const raw=String(q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  return raw.length?raw:["tens","ones"];
+}
+function parseAbacus(str){
+  const m={};
+  String(str||"").split(",").forEach(part=>{
+    const bits=part.split(":").map(s=>(s||"").trim().toLowerCase());
+    const k=bits[0], v=bits[1];
+    if(k){ const n=parseInt(v,10); m[k]=Number.isFinite(n)?n:0; }
+  });
+  return m;
+}
+function abacusMax(){ return 9; }
+function currentAbacus(){
+  const v=state.interactiveAnswers[state.index];
+  return (v && typeof v==="object") ? v : {};
+}
+function abacusMarkup(q){
+  const cols=abacusColumns(q);
+  const ref=q.abacus_state?parseAbacus(q.abacus_state):null;
+  const refBlock=ref?`<div class="abacus-ref"><div class="abacus-ref-label">The abacus shows:</div>${abacusStatic(cols,ref)}</div>`:"";
+  const rods=cols.map(c=>`
+    <div class="abacus-col">
+      <button type="button" class="abacus-rod" onclick="tapAbacus('${c}')" aria-label="Add a bead to ${c}">
+        <span class="abacus-beads" id="abacusBeads_${c}"></span>
+      </button>
+      <button type="button" class="abacus-minus" onclick="removeAbacus('${c}')" aria-label="Remove a bead from ${c}">&minus;</button>
+      <span class="abacus-colname">${esc(c)}</span>
+    </div>`).join("");
+  return `<div class="abacus-answer" id="abacusAnswer">
+    ${refBlock}
+    <div class="abacus-hint">Tap a column to add a bead. Tap &minus; to remove one.</div>
+    <div class="abacus-frame">${rods}</div>
+    <div class="abacus-tally" id="abacusTally"></div>
+  </div>`;
+}
+function abacusStatic(cols,map){
+  const rods=cols.map(c=>{
+    const n=Math.max(0,Math.min(abacusMax(),map[c]||0));
+    const beads=Array.from({length:n},()=>`<span class="abacus-bead"></span>`).join("");
+    return `<div class="abacus-col"><div class="abacus-rod abacus-rod-static"><span class="abacus-beads">${beads}</span></div><span class="abacus-colname">${esc(c)}</span></div>`;
+  }).join("");
+  return `<div class="abacus-frame abacus-frame-static">${rods}</div>`;
+}
+window.tapAbacus=(c)=>{ const m={...currentAbacus()}; m[c]=Math.min(abacusMax(),(m[c]||0)+1); state.interactiveAnswers[state.index]=m; renderAbacusState(); };
+window.removeAbacus=(c)=>{ const m={...currentAbacus()}; if(m[c]>0){ m[c]--; if(!m[c]) delete m[c]; } state.interactiveAnswers[state.index]=m; renderAbacusState(); };
+function renderAbacusState(){
+  const q=state.homework&&state.homework.questions&&state.homework.questions[state.index]; if(!q) return;
+  const cols=abacusColumns(q); const sel=currentAbacus();
+  for(const c of cols){
+    const holder=document.getElementById(`abacusBeads_${c}`);
+    if(holder){ const n=Math.max(0,Math.min(abacusMax(),sel[c]||0)); holder.innerHTML=Array.from({length:n},()=>`<span class="abacus-bead"></span>`).join(""); }
+  }
+  const tally=document.getElementById("abacusTally");
+  if(tally){ tally.textContent=cols.map(c=>`${c}: ${sel[c]||0}`).join("  ·  "); }
+}
+function readAbacusAnswer(){
+  const sel=currentAbacus();
+  const total=Object.values(sel).reduce((a,b)=>a+(b||0),0);
+  if(!total) return null;
+  return {...sel};
+}
+function abacusIsCorrect(given,q){
+  const want=parseAbacus(q.answer);
+  const got=(given&&typeof given==="object")?given:parseAbacus(given);
+  const keys=new Set([...abacusColumns(q),...Object.keys(want),...Object.keys(got)]);
+  for(const k of keys){ if((want[k]||0)!==(got[k]||0)) return false; }
+  return true;
+}
+// Serialise a bead map to the canonical "label:count" string in column order,
+// for storing the pupil's submitted answer.
+function abacusMapToString(given,q){
+  const m=(given&&typeof given==="object")?given:parseAbacus(given);
+  return abacusColumns(q).map(c=>`${c}:${m[c]||0}`).join(",");
+}
+
 function sequenceMarkup(idBase,item){
   const count=sequenceCount(item);
   // answer_unit may be a single unit ("cm") shown once at the end, OR a comma
@@ -3708,6 +3834,8 @@ function renderQuestion(){
                       ? sequenceMarkup("seqInput",q)
                     : q.type==="coins"
                       ? coinsMarkup(q)
+                    : q.type==="abacus"
+                      ? abacusMarkup(q)
                     : q.type==="multipart"
         ? multipartMarkup(q)
         : isTimeQuestion(q)
@@ -3730,6 +3858,7 @@ function renderQuestion(){
   `);
   if(q.type==="matching") setTimeout(drawMatchingLines,60);
   if(q.type==="coins") setTimeout(renderCoinState,40);
+  if(q.type==="abacus") setTimeout(renderAbacusState,40);
   if(q.type==="drawing"){
     drawingState.strokes=[];
     drawingState.active=null;
@@ -3776,6 +3905,7 @@ function getStudentAnswer(q){
   if(q.type==="angle") return String(state.interactiveAnswers[state.index]??"");
   if(q.type==="sequence") return readSequenceAnswer("seqInput",sequenceCount(q));
   if(q.type==="coins") return readCoinsAnswer();
+  if(q.type==="abacus") return readAbacusAnswer();
   if(q.type==="multipart") return readMultipartAnswer(q);
   if(isTimeQuestion(q)) return readTimeAnswer("", timeNeedsMeridiem(q));
   const typed=($("#answerInput")?.value||"").trim();
@@ -3881,9 +4011,11 @@ function interactiveIsCorrect(q,given){
   if(q.type==="angle") return Math.abs(Number(given)-Number(q.answer))<=Number(q.angle_tolerance||2);
   if(q.type==="fraction_visual") return normalise(given)===normalise(q.answer);
   if(q.type==="coins") return coinsIsCorrect(given,q.answer);
+  if(q.type==="abacus") return abacusIsCorrect(given,q);
   if(q.type==="shade") return shadeIsCorrect(given,q);
   if(q.type==="sequence") return sequenceIsCorrect(given,q.answer);
   if(q.type==="coins") return coinsIsCorrect(given,q.answer);
+  if(q.type==="abacus") return abacusIsCorrect(given,q);
   return isCorrect(given,q.answer);
 }
 // Shade a fraction of a grid. `given` is a JSON array of shaded cell indices.
@@ -3958,7 +4090,7 @@ window.refreshShadePreview=(i)=>{
 };
 window.checkAnswer=async()=>{
   const q=state.homework.questions[state.index], given=getStudentAnswer(q);
-  if(given===null) return alert(q.type==="shade"?"Tap at least one square to shade first.":q.type==="coins"?"Tap at least one coin first.":q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
+  if(given===null) return alert(q.type==="shade"?"Tap at least one square to shade first.":q.type==="coins"?"Tap at least one coin first.":q.type==="abacus"?"Tap a column to add at least one bead first.":q.type==="matching"?"Connect every item before checking.":q.type==="point"?"Tap a point on the grid first.":q.type==="coordinate"?"Enter both the x-coordinate and y-coordinate.":q.type==="multipart"?"Complete every answer part. For time answers, minutes must be between 00 and 59.":"Enter a valid hour and minutes. Minutes must be between 00 and 59.");
   if(given==="") return alert(q.type==="drawing" ? "Draw at least one line before submitting." : "Enter or choose an answer.");
   if(q.type==="drawing"){
     const parsed=JSON.parse(given);
@@ -3978,7 +4110,7 @@ window.checkAnswer=async()=>{
   const record=state.attempts[state.index] || {question_index:state.index,first_answer:null,first_correct:null,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],question_started_at:Date.now()};
   // Coins answer is an object internally; store a readable canonical string so it
   // displays cleanly and re-marks correctly (coinsIsCorrect parses either form).
-  const givenForStore = q.type==="coins" ? coinMapToString(given) : given;
+  const givenForStore = q.type==="coins" ? coinMapToString(given) : q.type==="abacus" ? abacusMapToString(given,q) : given;
   if(record.first_answer===null || record.first_answer===""){
     record.first_answer=givenForStore;
     record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
