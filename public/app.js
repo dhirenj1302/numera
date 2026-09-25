@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.06";
+const NUMERA_VERSION = "v3.07";
 const state = {
   files: [],
   sourceImages: [],
@@ -3370,9 +3370,22 @@ function normaliseAbacusAnswer(answer,columns){
 // derives columns from abacus_state if columns are missing.
 function reconcileAbacusFE(q){
   try{
-    if(!q || q.type!=="abacus") return;
+    if(!q) return;
+    // Promote to abacus when the answer has the "label:count" signature (place-value
+    // words + counts), even if the AI labelled it sequence/number. Two+ such pairs,
+    // using place-value words, is unambiguously an abacus answer.
+    if(q.type!=="abacus" && !q.type_user_set){
+      const ans=String(q.answer||"");
+      const pairs=ans.match(/\b(ones|tens|hundreds|thousands|units)\s*:\s*\d+/gi);
+      if(pairs && pairs.length>=2){
+        q.type="abacus";
+        if(!q.abacus_columns){
+          q.abacus_columns=pairs.map(p=>p.split(":")[0].trim().toLowerCase()).join(",");
+        }
+      }
+    }
+    if(q.type!=="abacus") return;
     if(!q.abacus_columns){
-      // Infer columns from a provided state, else default.
       if(q.abacus_state && /[a-z]+\s*:/i.test(q.abacus_state)){
         q.abacus_columns=String(q.abacus_state).split(",").map(p=>p.split(":")[0].trim().toLowerCase()).filter(Boolean).join(",");
       } else { q.abacus_columns="tens,ones"; }
