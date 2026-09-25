@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.05";
+const NUMERA_VERSION = "v3.06";
 const state = {
   files: [],
   sourceImages: [],
@@ -1978,7 +1978,7 @@ async function extractHomework(){
     // recompute the working's final step in JS (never wrong) and, if it disagrees
     // with the stored answer, trust the recomputed value. This is a code check,
     // not a prompt instruction, so it doesn't depend on the AI being careful.
-    (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+    (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);reconcileAbacusFE(q);flagMalformedFE(q);});
     // Snapshot what the AI produced, so at publish we can detect what the teacher
     // actually corrected (the correction-feedback loop). Only set once, from the
     // fresh AI output — never overwritten by later edits.
@@ -2319,7 +2319,7 @@ function renderReview(){
   // Reconcile every question's answer against its working on each render — this
   // guarantees the money (pence↔pounds) and answer/working fixes apply even to
   // questions created before this version, the moment the editor shows them.
-  (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);flagMalformedFE(q);});
+  (state.draft.questions||[]).forEach(q=>{detectAnswerTypeFE(q);solveMissingOpsFE(q);reconcileAnswerWithWorking(q);reconcileCoinsFE(q);reconcileAbacusFE(q);flagMalformedFE(q);});
   const qs = state.draft.questions.map((q,i)=>questionEditor(q,i)).join("");
   const isEditing = !!(state.editingHomeworkId || (state.loadedForEditing && state.homework && state.homework.id));
   app.innerHTML = shell(`
@@ -3342,6 +3342,46 @@ function parseAbacus(str){
   return m;
 }
 function abacusMax(){ return 9; }
+// Normalise an abacus answer to canonical "label:count" pairs. The AI sometimes
+// stores the plain NUMBER (e.g. "52") instead of bead counts — convert it by
+// distributing digits across the columns right-to-left (ones, tens, …). Also
+// tidies "label: count" spacing. Returns the canonical string.
+function normaliseAbacusAnswer(answer,columns){
+  const cols=String(columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const raw=String(answer==null?"":answer).trim();
+  // Already in label:count form?
+  if(/[a-z]+\s*:\s*\d+/i.test(raw)){
+    const m=parseAbacus(raw);
+    return cols.map(c=>`${c}:${m[c]||0}`).join(",");
+  }
+  // Plain number (possibly with spaces/commas) -> distribute digits by place value.
+  const digits=raw.replace(/[^\d]/g,"");
+  if(digits){
+    const rev=digits.split("").reverse();               // ones first
+    const revCols=[...cols].reverse();                    // ones col first
+    const m={};
+    revCols.forEach((c,idx)=>{ m[c]=Number(rev[idx]||0); });
+    return cols.map(c=>`${c}:${m[c]||0}`).join(",");
+  }
+  return cols.map(c=>`${c}:0`).join(",");
+}
+// On every render, put an abacus question's answer into canonical label:count
+// form (fixes the case where the AI stored the plain number, e.g. "52"). Also
+// derives columns from abacus_state if columns are missing.
+function reconcileAbacusFE(q){
+  try{
+    if(!q || q.type!=="abacus") return;
+    if(!q.abacus_columns){
+      // Infer columns from a provided state, else default.
+      if(q.abacus_state && /[a-z]+\s*:/i.test(q.abacus_state)){
+        q.abacus_columns=String(q.abacus_state).split(",").map(p=>p.split(":")[0].trim().toLowerCase()).filter(Boolean).join(",");
+      } else { q.abacus_columns="tens,ones"; }
+    }
+    q.answer=normaliseAbacusAnswer(q.answer,q.abacus_columns);
+    if(q.abacus_state) q.abacus_state=normaliseAbacusAnswer(q.abacus_state,q.abacus_columns);
+  }catch(e){ /* leave unchanged on any parse issue */ }
+}
+
 function currentAbacus(){
   const v=state.interactiveAnswers[state.index];
   return (v && typeof v==="object") ? v : {};
@@ -3392,7 +3432,7 @@ function readAbacusAnswer(){
   return {...sel};
 }
 function abacusIsCorrect(given,q){
-  const want=parseAbacus(q.answer);
+  const want=parseAbacus(normaliseAbacusAnswer(q.answer,q.abacus_columns));
   const got=(given&&typeof given==="object")?given:parseAbacus(given);
   const keys=new Set([...abacusColumns(q),...Object.keys(want),...Object.keys(got)]);
   for(const k of keys){ if((want[k]||0)!==(got[k]||0)) return false; }
@@ -4174,7 +4214,7 @@ function renderIncorrect(){
       <div class="feedback learn"><strong>How it works</strong><br>${esc(explanation)}</div>
       ${voiceControl()}
       ${q.practice_prompt ? `<div class="feedback good"><strong>Upgrade challenge</strong><br>${formatMath(q.practice_prompt)}</div>
-      ${/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : /^\s*-?\d+(?:\.\d+)?(\s*,\s*-?\d+(?:\.\d+)?){1,}\s*$/.test(String(q.practice_answer||"")) ? `<div class="field"><label>Your answer</label>${sequenceMarkup("practiceSeq",{answer:q.practice_answer})}</div>` : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
+      ${isAbacusPractice(q) ? practiceAbacusMarkup(q) : /^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim()) ? timeAnswerMarkup("practice",{answer:q.practice_answer}) : /^\s*-?\d+(?:\.\d+)?(\s*,\s*-?\d+(?:\.\d+)?){1,}\s*$/.test(String(q.practice_answer||"")) ? `<div class="field"><label>Your answer</label>${sequenceMarkup("practiceSeq",{answer:q.practice_answer})}</div>` : `<div class="field"><label>Your answer</label><div class="answer-with-unit"><button type="button" class="sign-toggle" onclick="toggleAnswerSign('practiceInput')" aria-label="Make the answer negative or positive" title="Make negative / positive">±</button><input id="practiceInput" inputmode="decimal"></div></div>`}
       <button class="btn green block" onclick="checkPractice()">Check upgrade answer</button>` :
       `<button class="btn green block" onclick="retryOriginal()">Try the original again</button>`}
     </div>
@@ -4183,21 +4223,57 @@ function renderIncorrect(){
     const practice = q.practice_prompt ? `Now try this similar question. ${q.practice_prompt}` : "Now try the original question again.";
     setTimeout(() => speak(`That was a good try. Mistakes help our brains grow. Here is a clue. ${hint}. Let us work through it. ${explanation}. ${practice}`), 120);
   }
+  if(q.practice_prompt && isAbacusPractice(q)) setTimeout(renderPracticeAbacusState,40);
 }
 window.retryOriginal=()=>renderQuestion();
+// --- Practice/upgrade abacus (self-contained state, separate from the main
+// question's beads). A practice answer is an abacus when it's in label:count form
+// or the question carries practice_abacus_columns. -------------------------------
+function isAbacusPractice(q){
+  return /[a-z]+\s*:\s*\d+/i.test(String(q.practice_answer||"")) || !!q.practice_abacus_columns;
+}
+function practiceAbacusColumns(q){
+  const raw=String(q.practice_abacus_columns||q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
+  return raw.length?raw:["tens","ones"];
+}
+function practiceAbacusMarkup(q){
+  const cols=practiceAbacusColumns(q);
+  state.practiceAbacus={};
+  const rods=cols.map(c=>`<div class="abacus-col">
+    <button type="button" class="abacus-rod" onclick="tapPracticeAbacus('${c}')" aria-label="Add a bead to ${c}"><span class="abacus-beads" id="pAbacusBeads_${c}"></span></button>
+    <button type="button" class="abacus-minus" onclick="removePracticeAbacus('${c}')" aria-label="Remove a bead from ${c}">&minus;</button>
+    <span class="abacus-colname">${esc(c)}</span></div>`).join("");
+  return `<div class="field"><label>Your answer</label><div class="abacus-answer"><div class="abacus-hint">Tap a column to add a bead. Tap &minus; to remove one.</div><div class="abacus-frame">${rods}</div><div class="abacus-tally" id="pAbacusTally"></div></div></div>`;
+}
+window.tapPracticeAbacus=(c)=>{ const m={...(state.practiceAbacus||{})}; m[c]=Math.min(9,(m[c]||0)+1); state.practiceAbacus=m; renderPracticeAbacusState(); };
+window.removePracticeAbacus=(c)=>{ const m={...(state.practiceAbacus||{})}; if(m[c]>0){ m[c]--; if(!m[c]) delete m[c]; } state.practiceAbacus=m; renderPracticeAbacusState(); };
+function renderPracticeAbacusState(){
+  const q=state.homework?.questions?.[state.index]; if(!q) return;
+  const cols=practiceAbacusColumns(q); const sel=state.practiceAbacus||{};
+  for(const c of cols){ const h=document.getElementById(`pAbacusBeads_${c}`); if(h){ const n=Math.max(0,Math.min(9,sel[c]||0)); h.innerHTML=Array.from({length:n},()=>`<span class="abacus-bead"></span>`).join(""); } }
+  const t=document.getElementById("pAbacusTally"); if(t){ t.textContent=cols.map(c=>`${c}: ${sel[c]||0}`).join("  ·  "); }
+}
+
 window.checkPractice=()=>{
   const q=state.homework.questions[state.index];
+  const abacusPractice=isAbacusPractice(q);
   const timePractice=/^\d{1,2}:\d{2}/.test(String(q.practice_answer||"").trim());
   const seqPractice=/^\s*-?\d+(?:\.\d+)?(\s*,\s*-?\d+(?:\.\d+)?){1,}\s*$/.test(String(q.practice_answer||""));
   const practiceWantsMeridiem=timeNeedsMeridiem({answer:q.practice_answer});
-  const v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem)
+  let v;
+  if(abacusPractice){
+    const sel=state.practiceAbacus||{};
+    v=Object.values(sel).reduce((a,b)=>a+(b||0),0)?{...sel}:null;
+  } else {
+    v=timePractice ? readTimeAnswer("practice",practiceWantsMeridiem)
         : seqPractice ? readSequenceAnswer("practiceSeq",sequenceCount({answer:q.practice_answer}))
         : ($("#practiceInput")?.value||"").trim();
-  if(v===null) return alert(timePractice?(practiceWantsMeridiem?"Enter the hour, minutes, and choose AM or PM.":"Enter a valid hour and minutes."):"Fill in every box.");
-  if(!v) return alert("Enter an answer.");
+  }
+  if(v===null) return alert(abacusPractice?"Tap a column to add at least one bead.":timePractice?(practiceWantsMeridiem?"Enter the hour, minutes, and choose AM or PM.":"Enter a valid hour and minutes."):"Fill in every box.");
+  if(!abacusPractice && !v) return alert("Enter an answer.");
   const record=state.attempts[state.index];
   record.practice_attempts=(record.practice_attempts||0)+1;
-  const practiceCorrect = seqPractice ? sequenceIsCorrect(v,q.practice_answer) : isCorrect(v,q.practice_answer);
+  const practiceCorrect = abacusPractice ? abacusIsCorrect(v,{answer:q.practice_answer,abacus_columns:practiceAbacusColumns(q).join(",")}) : seqPractice ? sequenceIsCorrect(v,q.practice_answer) : isCorrect(v,q.practice_answer);
   if(practiceCorrect){
     record.mastered=true;
     renderCorrect(false,true);
