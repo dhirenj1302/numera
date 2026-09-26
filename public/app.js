@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.09";
+const NUMERA_VERSION = "v3.10";
 const state = {
   files: [],
   sourceImages: [],
@@ -4586,6 +4586,73 @@ function addGems(n){
   return total;
 }
 
+// ============================================================================
+// v3.10 GAMIFICATION SYSTEM: Badges & Milestone Certificates
+// ============================================================================
+
+const BADGE_THRESHOLDS = [
+  { gems: 10, id: 'bronze', name: 'Bronze Mathematician', emoji: '🥉', color: '#CD7F32' },
+  { gems: 25, id: 'silver', name: 'Silver Scholar', emoji: '🥈', color: '#C0C0C0' },
+  { gems: 50, id: 'gold', name: 'Gold Expert', emoji: '🥇', color: '#FFD700' },
+  { gems: 100, id: 'platinum', name: 'Platinum Master', emoji: '🏆', color: '#E5E4E2' },
+  { gems: 200, id: 'diamond', name: 'Diamond Legend', emoji: '💎', color: '#B9F2FF' },
+  { gems: 500, id: 'cosmic', name: 'Cosmic Champion', emoji: '⭐', color: '#FF6B9D' }
+];
+const CERTIFICATE_INTERVAL = 3;
+
+function getAchievementsKey(){ return `numera:achievements:${state.studentUsername||'guest'}`; }
+function getAchievements(){
+  try { return JSON.parse(localStorage.getItem(getAchievementsKey())||'{"badges":[],"certificates":[],"homework_count":0}'); }
+  catch { return {badges:[],certificates:[],homework_count:0}; }
+}
+function saveAchievements(a){ try { localStorage.setItem(getAchievementsKey(),JSON.stringify(a)); }catch{} }
+
+function checkNewUnlocks(gemsTotal,isNewSubmission=true){
+  const a=getAchievements(), newB=[], newC=[];
+  for(const b of BADGE_THRESHOLDS){
+    if(gemsTotal>=b.gems && !a.badges.includes(b.id)){ newB.push(b); a.badges.push(b.id); }
+  }
+  if(isNewSubmission) a.homework_count+=1;
+  const certNum=Math.floor(a.homework_count/CERTIFICATE_INTERVAL);
+  const curr=a.certificates||[];
+  for(let i=curr.length;i<certNum;i++){
+    const cn=i+1;
+    newC.push({id:`cert_${cn}`,number:cn,homeworks:cn*CERTIFICATE_INTERVAL,emoji:'📜'});
+    curr.push(`cert_${cn}`);
+  }
+  a.certificates=curr;
+  if(newB.length>0 || newC.length>0) saveAchievements(a);
+  return {newBadges:newB,newCertificates:newC,unlocked:newB.length>0||newC.length>0,achievements:a};
+}
+
+function showPrizeProgress(gemsTotal){
+  const nxt=BADGE_THRESHOLDS.find(b=>gemsTotal<b.gems);
+  if(!nxt) return `<div class="card prize-progress-card"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div></div></div>`;
+  const gn=nxt.gems-gemsTotal, prev=BADGE_THRESHOLDS.find(b=>b.gems<gemsTotal), pct=((gemsTotal-(prev?.gems||0))/(nxt.gems-(prev?.gems||0)))*100;
+  return `<div class="card prize-progress-card"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems collected</span><span class="next-prize-name">${nxt.emoji} ${nxt.name}</span></div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><span class="gems-needed">${gn} more gems to unlock ${nxt.name}</span></div></div>`;
+}
+
+function showNewUnlocks(newB,newC){
+  if(newB.length===0 && newC.length===0) return;
+  let h=`<div class="modal-overlay" onclick="if(event.target===this) document.querySelector('.unlock-modal')?.remove()"><div class="unlock-modal card"><div class="unlock-header"><div class="confetti-burst">🎉 ⭐ 🎊</div><h2>New Prize Unlocked!</h2></div><div class="unlock-content">`;
+  if(newB.length>0){ h+=`<div class="unlocked-badges">`; for(const b of newB) h+=`<div class="badge-unlock" style="border-color: ${b.color}"><div class="badge-emoji">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-gems">${b.gems} gems</div></div>`; h+=`</div>`; }
+  if(newC.length>0){ h+=`<div class="unlocked-certificates">`; for(const c of newC) h+=`<div class="certificate-unlock"><div class="certificate-emoji">${c.emoji}</div><div class="certificate-text"><div class="certificate-title">Milestone Certificate #${c.number}</div><div class="certificate-subtitle">${c.homeworks} homeworks completed</div></div></div>`; h+=`</div>`; }
+  h+=`</div><div class="unlock-footer"><button class="btn green block" onclick="document.querySelector('.unlock-modal')?.remove()">Awesome! 🚀</button><button class="btn secondary block" onclick="myPrizesPage(); document.querySelector('.unlock-modal')?.remove();">View My Prizes</button></div></div></div>`;
+  const m=document.createElement('div'); m.innerHTML=h; document.body.appendChild(m);
+  setTimeout(()=>{ m.querySelector('.unlock-modal')?.remove(); }, 8000);
+}
+
+window.myPrizesPage=function(){
+  const a=getAchievements(), g=getGemsTotal();
+  let p=shell(`<div class="mission"><h1>${esc(state.studentName)}'s Prize Gallery</h1><p class="muted">Your achievements and unlocked badges</p></div><div class="card gems-summary"><div class="gems-summary-content"><span class="gem-total">💎 ${g} gems</span><span class="badges-count">${a.badges.length} badges collected</span></div></div><div class="prizes-section"><h2>🏆 Achievement Badges</h2><div class="badges-grid">`);
+  for(const b of BADGE_THRESHOLDS){ if(a.badges.includes(b.id)) p+=`<div class="badge-card unlocked" style="border-color: ${b.color}"><div class="badge-icon">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">✓ Unlocked</div></div>`; else { const gn=b.gems-g; p+=`<div class="badge-card locked"><div class="badge-icon">🔒</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">${gn} gems away</div></div>`; } }
+  p+=`</div></div>`;
+  if(a.certificates && a.certificates.length>0){ p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><div class="certificates-list">`; for(let i=0;i<a.certificates.length;i++){ const cn=i+1; p+=`<div class="certificate-item"><div class="certificate-icon">📜</div><div class="certificate-details"><div class="certificate-title">Milestone Certificate #${cn}</div><div class="certificate-subtitle">${cn*CERTIFICATE_INTERVAL} homeworks completed</div></div></div>`; } p+=`</div></div>`; } else { p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><p class="muted">Complete ${CERTIFICATE_INTERVAL} homeworks to earn your first certificate!</p></div>`; }
+  const ncn=Math.floor(a.homework_count/CERTIFICATE_INTERVAL)+1, hfnc=ncn*CERTIFICATE_INTERVAL, hr=Math.max(0,hfnc-a.homework_count);
+  p+=`<div class="card progress-section"><h3>Progress to Next Certificate</h3><div class="homework-progress"><div class="progress-text">${a.homework_count} / ${hfnc} homeworks</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${(a.homework_count/hfnc)*100}%"></div></div><div class="progress-footer">${hr} more homeworks to unlock Certificate #${ncn}</div></div></div><button class="btn secondary block" onclick="renderComplete(0,0,1)" style="margin-top:20px">← Back to Results</button>`,true);
+  app.innerHTML=p;
+};
+
 function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null,serverGemsTotal=null){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
   // Award gems for this homework (once), from the real attempts. The running
@@ -4607,6 +4674,7 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div class="gems-total">You now have <strong>${gemsTotal}</strong> gems in your collection</div>
       <div class="gems-note">Earn gems by having a go, sticking with tricky questions, and finishing your work.</div>
     </div>`:""}
+    ${showPrizeProgress(gemsTotal)}
     <div class="score-grid">
       <div class="score"><span>Original score</span><strong>${op}%</strong><span>${original}/${total}</span></div>
       <div class="score mastery"><span>Mastery score</span><strong>${mp}%</strong><span>${mastery}/${total}</span></div>
@@ -4622,6 +4690,11 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div id="parentProgress"><div class="spinner small-spinner"></div><p class="muted">Loading past results…</p></div>
     </div>
   `);
+  // Check for newly unlocked badges and certificates
+  const unlockResult = checkNewUnlocks(gemsTotal, gemsEarned > 0);
+  if (unlockResult.unlocked) {
+    setTimeout(() => showNewUnlocks(unlockResult.newBadges, unlockResult.newCertificates), 500);
+  }
   if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
   checkLevelUpOffer();
 }
