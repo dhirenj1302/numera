@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.07";
+const NUMERA_VERSION = "v3.08";
 const state = {
   files: [],
   sourceImages: [],
@@ -4166,10 +4166,10 @@ window.checkAnswer=async()=>{
   const givenForStore = q.type==="coins" ? coinMapToString(given) : q.type==="abacus" ? abacusMapToString(given,q) : given;
   if(record.first_answer===null || record.first_answer===""){
     record.first_answer=givenForStore;
-    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
+    record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins","abacus","shade","sequence"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
-  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
+  if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins","abacus","shade","sequence"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
   } else renderIncorrect();
