@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.08";
+const NUMERA_VERSION = "v3.09";
 const state = {
   files: [],
   sourceImages: [],
@@ -1184,6 +1184,9 @@ window.editAbacusBead=(i,c,delta)=>{
   m[c]=Math.max(0,Math.min(9,(m[c]||0)+delta));
   const cols=String(q.abacus_columns||"tens,ones").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
   q.answer=cols.map(x=>`${x}:${m[x]||0}`).join(",");
+  // When teacher corrects the beads, update abacus_state (AI's read) to match so
+  // the student sees the corrected reference abacus, not the misread one.
+  if(q.abacus_state) q.abacus_state=q.answer;
   renderReview();
 };
 
