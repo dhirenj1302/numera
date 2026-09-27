@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.12";
+const NUMERA_VERSION = "v3.13";
 const state = {
   files: [],
   sourceImages: [],
@@ -4652,13 +4652,20 @@ function showPrizeProgress(gemsTotal){
 
 function showNewUnlocks(newB,newC){
   if(newB.length===0 && newC.length===0) return;
-  let h=`<div class="modal-overlay" onclick="if(event.target===this) this.remove()"><div class="unlock-modal card pop-animation"><div class="unlock-header"><div class="confetti-burst">🎉</div><div class="confetti-burst">⭐</div><div class="confetti-burst">🎊</div><h2>New Prize Unlocked!</h2></div><div class="unlock-content">`;
+  let h=`<div class="modal-overlay"><div class="unlock-modal card pop-animation"><div class="unlock-header"><div class="confetti-burst">🎉</div><div class="confetti-burst">⭐</div><div class="confetti-burst">🎊</div><h2>New Prize Unlocked!</h2></div><div class="unlock-content">`;
   if(newB.length>0){ h+=`<div class="unlocked-badges">`; for(const b of newB) h+=`<div class="badge-unlock explosion-animation" style="border-color: ${b.color}"><div class="badge-emoji">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-gems">${b.gems} gems</div></div>`; h+=`</div>`; }
   if(newC.length>0){ h+=`<div class="unlocked-certificates">`; for(const c of newC) h+=`<div class="certificate-unlock explosion-animation"><div class="certificate-emoji">${c.emoji}</div><div class="certificate-text"><div class="certificate-title">Milestone Certificate #${c.number}</div><div class="certificate-subtitle">${c.homeworks} homeworks completed</div></div></div>`; h+=`</div>`; }
-  h+=`</div><div class="unlock-footer"><button class="btn green block" onclick="this.closest('.modal-overlay')?.remove()">Awesome! 🚀</button><button class="btn secondary block" onclick="myPrizesPage(); this.closest('.modal-overlay')?.remove();">View My Prizes</button></div></div></div>`;
+  h+=`</div><div class="unlock-footer"><button class="btn green block" data-action="close">Awesome! 🚀</button><button class="btn secondary block" data-action="prizes">View My Prizes</button></div></div></div>`;
   const m=document.createElement('div'); m.innerHTML=h; document.body.appendChild(m);
+  const overlay=m.querySelector('.modal-overlay');
+  // Close button handler
+  m.querySelector('[data-action="close"]')?.addEventListener('click', ()=>{ overlay?.remove(); });
+  // Prizes button handler
+  m.querySelector('[data-action="prizes"]')?.addEventListener('click', ()=>{ myPrizesPage(); overlay?.remove(); });
+  // Click on dark area to close
+  overlay?.addEventListener('click', (e)=>{ if(e.target===overlay) overlay.remove(); });
   // Auto-close after 8 seconds
-  setTimeout(()=>{ document.querySelector('.modal-overlay')?.remove(); }, 8000);
+  setTimeout(()=>{ overlay?.remove(); }, 8000);
 }
 
 window.myPrizesPage=function(){
