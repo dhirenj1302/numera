@@ -1,14 +1,16 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.15";
+const NUMERA_VERSION = "v3.16";
 const state = {
   files: [],
   sourceImages: [],
   draft: JSON.parse(localStorage.getItem("numera:draft")||"null"),
   editingHomeworkId: localStorage.getItem("numera:editingHomeworkId") || null,
   homework: null,
-  studentName: "",
+  studentName: localStorage.getItem("numera:studentName") || "",
   studentUsername: localStorage.getItem("numera:studentUsername") || "",
+  studentToken: localStorage.getItem("numera:studentToken") || "",
+  studentHomeworkId: localStorage.getItem("numera:studentHomeworkId") || null,
   setterSession: JSON.parse(localStorage.getItem("numera:setterSession")||"null"),
   reviewerSession: JSON.parse(localStorage.getItem("numera:reviewerSession")||"null"),
   index: 0,
@@ -716,6 +718,23 @@ window.loginSetter=async e=>{
   }catch(err){alert(err.message);}
 };
 window.logoutSetter=()=>{state.setterSession=null;localStorage.removeItem("numera:setterSession");location.hash="#/teacher-signin";};
+window.logoutStudent=()=>{state.studentName="";state.studentUsername="";state.studentToken="";state.studentHomeworkId=null;localStorage.removeItem("numera:studentName");localStorage.removeItem("numera:studentUsername");localStorage.removeItem("numera:studentToken");localStorage.removeItem("numera:studentHomeworkId");localStorage.removeItem("numera:studentProgress");};
+function saveStudentProgress(){
+  if(!state.studentHomeworkId) return;
+  const progress={
+    homeworkId:state.studentHomeworkId,
+    index:state.index,
+    attempts:state.attempts,
+    phase:state.phase,
+    multipartAnswers:state.multipartAnswers,
+    interactiveAnswers:state.interactiveAnswers,
+    matchingSelections:state.matchingSelections,
+    timestamp:Date.now()
+  };
+  try{
+    localStorage.setItem("numera:studentProgress",JSON.stringify(progress));
+  }catch(e){ /* localStorage full */ }
+}
 
 function renderForgotLogin(){
   app.innerHTML=shell(`
@@ -3066,7 +3085,28 @@ async function loadHomework(id, mode){
       state.index=0;
       state.attempts=[];
       renderMission();
-    }else renderJoin();
+    }else{
+      // Check if student is already logged in for this homework
+      if(state.studentUsername && state.studentToken && state.studentHomeworkId===id){
+        state.studentName=state.studentName||localStorage.getItem("numera:studentName")||"";
+        // Restore progress if it exists
+        const savedProgress=JSON.parse(localStorage.getItem("numera:studentProgress")||"null");
+        if(savedProgress && savedProgress.homeworkId===id){
+          state.index=savedProgress.index||0;
+          state.attempts=savedProgress.attempts||[];
+          state.phase=savedProgress.phase||"answer";
+          state.multipartAnswers=savedProgress.multipartAnswers||{};
+          state.interactiveAnswers=savedProgress.interactiveAnswers||{};
+          state.matchingSelections=savedProgress.matchingSelections||{};
+        }else{
+          state.index=0; state.attempts=[]; state.phase="answer"; state.multipartAnswers={}; state.interactiveAnswers={}; state.matchingSelections={};
+        }
+        // Determine what page to show based on progress
+        if(state.index>0 || state.attempts.length>0) renderQuestion(); else renderMission();
+      }else{
+        renderJoin();
+      }
+    }
   }catch(e){app.innerHTML=shell(`<div class="card"><h2>Homework unavailable</h2><p>${esc(e.message)}</p></div>`,true);}
 }
 
@@ -3094,8 +3134,15 @@ window.joinHomework=async()=>{
     state.studentName=student.display_name;
     state.studentUsername=student.username;
     state.studentToken=student.token||"";
+    state.studentHomeworkId=state.homework.id;
+    localStorage.setItem("numera:studentName",student.display_name);
     localStorage.setItem("numera:studentUsername",student.username);
-    state.index=0; state.attempts=[]; renderMission();
+    localStorage.setItem("numera:studentToken",student.token||"");
+    localStorage.setItem("numera:studentHomeworkId",state.homework.id);
+    // Initialize fresh progress for new session
+    state.index=0; state.attempts=[]; state.phase="answer"; state.multipartAnswers={}; state.interactiveAnswers={}; state.matchingSelections={};
+    localStorage.removeItem("numera:studentProgress");
+    renderMission();
   }catch(e){alert(e.message);}
 };
 
@@ -4156,9 +4203,11 @@ window.checkAnswer=async()=>{
       const auto=mark.confidence>=0.72;
       const record={question_index:state.index,first_answer:given,first_correct:auto?mark.correct:false,retries:0,mastered:auto?mark.correct:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:!auto,drawing_preview:parsed.preview,drawing_feedback:mark.feedback,drawing_confidence:mark.confidence};
       state.attempts[state.index]=record;
+      saveStudentProgress();
       app.innerHTML=shell(`<div class="mission"><div class="mascot">${auto?(mark.correct?"🌟":"🌱"):"✏️"}</div><h1>${auto?(mark.correct?"Drawing looks correct":"Have another look"):"Drawing saved for review"}</h1><div class="feedback ${mark.correct?"good":"learn"}">${esc(mark.feedback||"The drawing has been recorded.")}</div><button class="btn green block" onclick="${auto&&!mark.correct?"retryOriginal()":"nextQuestion()"}">${auto&&!mark.correct?"Try drawing again":nextButtonLabel()}</button></div>`,"returnToCurrentQuestion()");
     }catch(err){
       state.attempts[state.index]={question_index:state.index,first_answer:given,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[],requires_teacher_review:true,drawing_preview:parsed.preview};
+      saveStudentProgress();
       app.innerHTML=shell(`<div class="mission"><div class="mascot">✏️</div><h1>Drawing saved</h1><div class="feedback learn">Automatic marking was not confident, so a teacher or parent can review it.</div><button class="btn green block" onclick="nextQuestion()">${nextButtonLabel()}</button></div>`,"returnToCurrentQuestion()");
     }
     return;
@@ -4172,6 +4221,7 @@ window.checkAnswer=async()=>{
     record.first_correct=q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins","abacus","shade","sequence"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer);
     state.attempts[state.index]=record;
   } else record.retries++;
+  saveStudentProgress();
   if(q.type==="multipart"?multipartIsCorrect(given,q):["point","coordinate","matching","clock","drag","angle","fraction_visual","coins","abacus","shade","sequence"].includes(q.type)?interactiveIsCorrect(q,given):isCorrect(given,q.answer)){
     record.mastered=true;
     renderCorrect(record.first_correct);
@@ -4199,6 +4249,7 @@ window.showHint=(requestedLevel=null)=>{
   record.hint_events ||= [];
   record.hint_events.push({level,opened_at:new Date(now).toISOString(),seconds_from_question_start:Math.max(0,Math.round((now-(record.question_started_at||now))/1000))});
   state.attempts[state.index]=record;
+  saveStudentProgress();
 
   const hint=tiers[level-1];
   const more=level<4;
@@ -4327,6 +4378,7 @@ function renderCorrect(firstTry,upgraded=false){
 window.nextQuestion=()=>{
   state.index++;
   state.selected=null;
+  saveStudentProgress();
   if(state.index>=state.homework.questions.length) finishHomework();
   else renderQuestion();
 };
@@ -4351,6 +4403,9 @@ async function finishHomework(){
   for(let i=0;i<total;i++){
     if(!state.attempts[i]) state.attempts[i]={question_index:i,first_answer:null,first_correct:false,retries:0,mastered:false,hint_used:false,highest_hint_level:0,hint_count:0,hint_events:[]};
   }
+
+  // Clear in-progress session so they can't resume a finished homework
+  localStorage.removeItem("numera:studentProgress");
 
   // A Level Up is a synthetic homework with no DB row, so it must not be saved as
   // a normal submission (that would hit a foreign key and double-count evidence).
