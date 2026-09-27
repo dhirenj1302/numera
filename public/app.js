@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.11";
+const NUMERA_VERSION = "v3.12";
 const state = {
   files: [],
   sourceImages: [],
@@ -4682,10 +4682,14 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
   const gemsTotal = (serverGemsTotal!=null && Number.isFinite(Number(serverGemsTotal)))
     ? Number(serverGemsTotal)
     : (gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal());
+  // Determine the improvement message: perfect score gets special praise
+  const improvementMsg = (op === 100 && mp === 100)
+    ? `<p class="perfect-score-message">🌟 <strong>Perfect score!</strong> You got every question right on the first try!</p>`
+    : `<p>You improved your understanding by ${Math.max(0,mp-op)} percentage points.</p>`;
   app.innerHTML=shell(`
     <div class="mission">
       <div class="confetti">🎉 ⭐ 🎉</div><h1>Great work, ${esc(state.studentName)}!</h1>
-      <p>You improved your understanding by ${Math.max(0,mp-op)} percentage points.</p>
+      ${improvementMsg}
       <span class="saved-confirmation">✓ Results saved to the teacher dashboard</span>
     </div>
     ${gemsEarned>0?`<div class="card gems-card">

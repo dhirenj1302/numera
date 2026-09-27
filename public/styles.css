@@ -1278,3 +1278,23 @@
   color: #1a1a1a;
   margin: 0 0 14px 0;
 }
+
+/* Perfect Score Message */
+.perfect-score-message {
+  font-size: 16px !important;
+  color: #2e7d32 !important;
+  font-weight: 700 !important;
+  margin: 12px 0 !important;
+  animation: slideInDown 0.5s ease;
+}
+
+@keyframes slideInDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
