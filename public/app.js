@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.14";
+const NUMERA_VERSION = "v3.15";
 const state = {
   files: [],
   sourceImages: [],
@@ -4679,8 +4679,10 @@ window.showGemProgression=function(){
     else if(isNext){ status='next'; statusText=`${gemsToThis} gems away`; }
     p+=`<div class="progression-item ${status}"><div class="progression-level"><div class="level-badge" style="border-color: ${b.color}">${b.emoji}</div><div class="level-details"><div class="level-name">${b.name}</div><div class="level-gems">${b.gems} gems</div></div></div><div class="progression-bar-container"><div class="progress-bar" style="width: ${Math.max(0,Math.min(100,pct))}%"></div></div><div class="progression-status">${statusText}</div></div>`;
   }
-  p+=`</div><button class="btn secondary block" onclick="renderComplete(0,0,1)" style="margin-top:20px">← Back to Results</button>`;
+  p+=`</div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`;
   app.innerHTML=shell(p,true);
+  // Attach event listener for back button
+  document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
 };
 
 window.myPrizesPage=function(){
@@ -4690,8 +4692,10 @@ window.myPrizesPage=function(){
   p+=`</div></div>`;
   if(a.certificates && a.certificates.length>0){ p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><div class="certificates-list">`; for(let i=0;i<a.certificates.length;i++){ const cn=i+1; p+=`<div class="certificate-item"><div class="certificate-icon">📜</div><div class="certificate-details"><div class="certificate-title">Milestone Certificate #${cn}</div><div class="certificate-subtitle">${cn*CERTIFICATE_INTERVAL} homeworks completed</div></div></div>`; } p+=`</div></div>`; } else { p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><p class="muted">Complete ${CERTIFICATE_INTERVAL} homeworks to earn your first certificate!</p></div>`; }
   const ncn=Math.floor(a.homework_count/CERTIFICATE_INTERVAL)+1, hfnc=ncn*CERTIFICATE_INTERVAL, hr=Math.max(0,hfnc-a.homework_count);
-  p+=`<div class="card progress-section"><h3>Progress to Next Certificate</h3><div class="homework-progress"><div class="progress-text">${a.homework_count} / ${hfnc} homeworks</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${(a.homework_count/hfnc)*100}%"></div></div><div class="progress-footer">${hr} more homeworks to unlock Certificate #${ncn}</div></div></div><button class="btn secondary block" onclick="renderComplete(0,0,1)" style="margin-top:20px">← Back to Results</button>`;
+  p+=`<div class="card progress-section"><h3>Progress to Next Certificate</h3><div class="homework-progress"><div class="progress-text">${a.homework_count} / ${hfnc} homeworks</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${(a.homework_count/hfnc)*100}%"></div></div><div class="progress-footer">${hr} more homeworks to unlock Certificate #${ncn}</div></div></div><button class="btn secondary block" data-action="back-from-prizes" style="margin-top:20px">← Back to Results</button>`;
   app.innerHTML=shell(p,true);
+  // Attach event listener for back button
+  document.querySelector('[data-action="back-from-prizes"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
 };
 
 function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null,serverGemsTotal=null){
