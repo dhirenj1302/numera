@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.13";
+const NUMERA_VERSION = "v3.14";
 const state = {
   files: [],
   sourceImages: [],
@@ -4643,11 +4643,11 @@ function showPrizeProgress(gemsTotal){
   const unlockedBadges = BADGE_THRESHOLDS.filter(b=>gemsTotal>=b.gems);
   if(!nxt) {
     const badgeList = unlockedBadges.map(b=>`${b.emoji} ${b.name}`).join(' · ');
-    return `<div class="card prize-progress-card unlocked-all"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div><div class="badges-summary">${badgeList}</div></div></div>`;
+    return `<div class="card prize-progress-card unlocked-all clickable" onclick="showGemProgression()"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div><div class="badges-summary">${badgeList}</div></div></div>`;
   }
   const gn=nxt.gems-gemsTotal, prev=BADGE_THRESHOLDS.find(b=>b.gems<gemsTotal), pct=((gemsTotal-(prev?.gems||0))/(nxt.gems-(prev?.gems||0)))*100;
   const currentBadge = prev ? `${prev.emoji} ${prev.name}` : 'No badge yet';
-  return `<div class="card prize-progress-card"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="current-badge">Current: ${currentBadge}</span></div><div class="progress-section"><div class="next-prize-name">Next: ${nxt.emoji} ${nxt.name}</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><strong>${gn}</strong> more gems to unlock</div></div></div>`;
+  return `<div class="card prize-progress-card clickable" onclick="showGemProgression()"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="current-badge">Current: ${currentBadge}</span></div><div class="progress-section"><div class="next-prize-name">Next: ${nxt.emoji} ${nxt.name}</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><strong>${gn}</strong> more gems to unlock</div></div></div>`;
 }
 
 function showNewUnlocks(newB,newC){
@@ -4667,6 +4667,21 @@ function showNewUnlocks(newB,newC){
   // Auto-close after 8 seconds
   setTimeout(()=>{ overlay?.remove(); }, 8000);
 }
+
+window.showGemProgression=function(){
+  const g=getGemsTotal(), a=getAchievements();
+  let p=`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">Your journey to mastery</p></div><div class="gem-journey">`;
+  for(let i=0;i<BADGE_THRESHOLDS.length;i++){
+    const b=BADGE_THRESHOLDS[i], isUnlocked=a.badges.includes(b.id), isNext=(i>0?BADGE_THRESHOLDS[i-1].gems:0)<g && g<b.gems;
+    const gemsToThis=b.gems-g, prevThreshold=i>0?BADGE_THRESHOLDS[i-1].gems:0, pct=((g-prevThreshold)/(b.gems-prevThreshold))*100;
+    let status='locked', statusText=`${gemsToThis} gems away`;
+    if(isUnlocked){ status='unlocked'; statusText='✓ Unlocked'; }
+    else if(isNext){ status='next'; statusText=`${gemsToThis} gems away`; }
+    p+=`<div class="progression-item ${status}"><div class="progression-level"><div class="level-badge" style="border-color: ${b.color}">${b.emoji}</div><div class="level-details"><div class="level-name">${b.name}</div><div class="level-gems">${b.gems} gems</div></div></div><div class="progression-bar-container"><div class="progress-bar" style="width: ${Math.max(0,Math.min(100,pct))}%"></div></div><div class="progression-status">${statusText}</div></div>`;
+  }
+  p+=`</div><button class="btn secondary block" onclick="renderComplete(0,0,1)" style="margin-top:20px">← Back to Results</button>`;
+  app.innerHTML=shell(p,true);
+};
 
 window.myPrizesPage=function(){
   const a=getAchievements(), g=getGemsTotal();
