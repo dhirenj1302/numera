@@ -784,3 +784,497 @@
 .contact-form label{display:block;font-weight:700;color:var(--ink);margin-bottom:5px;font-size:14px}
 .contact-form input,.contact-form textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:15px;box-sizing:border-box}
 .contact-form textarea{resize:vertical;min-height:96px}
+
+/* ===== Gamification System v3.10 ===== */
+
+/* Prize Progress Card */
+.prize-progress-card {
+  background: linear-gradient(135deg, #fff8e1 0%, #fffbf0 100%);
+  border: 2px solid #ffd700;
+  border-radius: 16px;
+  padding: 18px;
+  margin: 16px 0;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.15);
+}
+
+.prize-progress-card.unlocked-all {
+  background: linear-gradient(135deg, #e1f5e1 0%, #f0fff0 100%);
+  border-color: #4caf50;
+}
+
+.prize-progress-content,
+.prize-progress-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prize-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gem-count {
+  font-weight: 800;
+  font-size: 18px;
+  color: #1a1a1a;
+}
+
+.current-badge {
+  font-weight: 700;
+  color: #666;
+  font-size: 14px;
+}
+
+.prize-status-text,
+.next-prize-name {
+  font-weight: 700;
+  color: #4caf50;
+  font-size: 16px;
+}
+
+.next-prize-name {
+  color: #ff9800;
+}
+
+.badges-summary {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-bar-container {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ff9800, #ffd700);
+  border-radius: 10px;
+  transition: width 0.4s ease;
+}
+
+.prize-progress-footer {
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+/* Modal Overlay & Unlock Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(2px);
+}
+
+.unlock-modal {
+  background: linear-gradient(135deg, #fff8e1 0%, #fffbf0 100%);
+  border: 3px solid #ffd700;
+  border-radius: 20px;
+  padding: 28px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: none;
+}
+
+.unlock-modal.pop-animation {
+  animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0.5) translateY(20px);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.unlock-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.confetti-burst {
+  display: inline-block;
+  font-size: 36px;
+  margin: 0 8px;
+  animation: float-bounce 0.6s ease-in-out infinite;
+}
+
+.unlock-header .confetti-burst:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.unlock-header .confetti-burst:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.unlock-header .confetti-burst:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+@keyframes float-bounce {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-12px) scale(1.1);
+  }
+}
+
+.unlock-header h2 {
+  font-size: 24px;
+  color: #1a1a1a;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.unlock-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* Unlocked Badges Grid */
+.unlocked-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.badge-unlock {
+  border: 3px solid;
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  animation: none;
+}
+
+.badge-unlock.explosion-animation {
+  animation: explode 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes explode {
+  0% {
+    transform: scale(0.3) rotate(-10deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15) rotate(5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.badge-emoji {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.badge-name {
+  font-weight: 800;
+  color: #1a1a1a;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.badge-gems {
+  font-size: 12px;
+  color: #ff9800;
+  font-weight: 700;
+}
+
+/* Unlocked Certificates Grid */
+.unlocked-certificates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.certificate-unlock {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 2px solid #90ee90;
+  border-radius: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0fff0 0%, #e8f5e9 100%);
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.15);
+  animation: none;
+}
+
+.certificate-unlock.explosion-animation {
+  animation: slideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(20px) scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.certificate-emoji {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+
+.certificate-text {
+  flex: 1;
+}
+
+.certificate-title {
+  font-weight: 800;
+  color: #1a1a1a;
+  font-size: 15px;
+}
+
+.certificate-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+}
+
+/* Unlock Footer */
+.unlock-footer {
+  display: flex;
+  gap: 12px;
+  flex-direction: column;
+}
+
+.unlock-footer .btn {
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.unlock-footer .btn.green {
+  background: linear-gradient(135deg, #4caf50, #45a049);
+  color: white;
+}
+
+.unlock-footer .btn.green:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(76, 175, 80, 0.3);
+}
+
+.unlock-footer .btn.secondary {
+  background: #f5f5f5;
+  color: #666;
+  border: 1px solid #ddd;
+}
+
+.unlock-footer .btn.secondary:hover {
+  background: #efefef;
+  color: #1a1a1a;
+}
+
+/* Badge Gallery (My Prizes Page) */
+.badges-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.badge-card {
+  border: 2px solid;
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.badge-card.unlocked {
+  background: linear-gradient(135deg, #fff8e1 0%, #fffbf0 100%);
+  box-shadow: 0 4px 12px rgba(255, 215, 0, 0.2);
+}
+
+.badge-card.unlocked:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(255, 215, 0, 0.3);
+}
+
+.badge-card.locked {
+  background: #f5f5f5;
+  border-color: #ddd !important;
+  opacity: 0.7;
+}
+
+.badge-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.badge-requirement {
+  font-size: 12px;
+  color: #999;
+  margin: 8px 0;
+  font-weight: 600;
+}
+
+.badge-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4caf50;
+}
+
+.badge-card.locked .badge-status {
+  color: #999;
+}
+
+/* Certificates List */
+.certificates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.certificate-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 2px solid #90ee90;
+  border-radius: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0fff0 0%, #e8f5e9 100%);
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.1);
+}
+
+.certificate-icon {
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+.certificate-details {
+  flex: 1;
+}
+
+.certificate-title {
+  font-weight: 800;
+  color: #1a1a1a;
+  font-size: 15px;
+}
+
+.certificate-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+}
+
+/* Progress Section */
+.progress-section {
+  border-radius: 14px;
+  padding: 18px;
+  background: linear-gradient(135deg, #f0f4ff 0%, #f9f7ff 100%);
+  border: 1px solid #e0e7ff;
+}
+
+.progress-section h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1a1a1a;
+  margin: 0 0 14px 0;
+}
+
+.homework-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-text {
+  font-weight: 700;
+  color: #555;
+  font-size: 14px;
+}
+
+.progress-footer {
+  font-size: 13px;
+  color: #666;
+  font-weight: 600;
+}
+
+/* Gems Summary */
+.gems-summary {
+  background: linear-gradient(135deg, #fff8e1 0%, #fffbf0 100%);
+  border: 2px solid #ffd700;
+  border-radius: 14px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.gems-summary-content {
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+  text-align: center;
+}
+
+.gem-total {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1a1a1a;
+}
+
+.badges-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: #666;
+}
+
+/* Prizes Section Headings */
+.prizes-section {
+  margin: 24px 0 16px 0;
+}
+
+.prizes-section h2 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1a1a1a;
+  margin: 0 0 14px 0;
+}

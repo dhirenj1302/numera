@@ -4591,12 +4591,12 @@ function addGems(n){
 // ============================================================================
 
 const BADGE_THRESHOLDS = [
-  { gems: 10, id: 'bronze', name: 'Bronze Mathematician', emoji: '🥉', color: '#CD7F32' },
-  { gems: 25, id: 'silver', name: 'Silver Scholar', emoji: '🥈', color: '#C0C0C0' },
-  { gems: 50, id: 'gold', name: 'Gold Expert', emoji: '🥇', color: '#FFD700' },
-  { gems: 100, id: 'platinum', name: 'Platinum Master', emoji: '🏆', color: '#E5E4E2' },
-  { gems: 200, id: 'diamond', name: 'Diamond Legend', emoji: '💎', color: '#B9F2FF' },
-  { gems: 500, id: 'cosmic', name: 'Cosmic Champion', emoji: '⭐', color: '#FF6B9D' }
+  { gems: 150, id: 'bronze', name: 'Bronze Mathematician', emoji: '🥉', color: '#CD7F32' },
+  { gems: 500, id: 'silver', name: 'Silver Scholar', emoji: '🥈', color: '#C0C0C0' },
+  { gems: 1250, id: 'gold', name: 'Gold Expert', emoji: '🥇', color: '#FFD700' },
+  { gems: 2500, id: 'platinum', name: 'Platinum Master', emoji: '🏆', color: '#E5E4E2' },
+  { gems: 5000, id: 'diamond', name: 'Diamond Legend', emoji: '💎', color: '#B9F2FF' },
+  { gems: 10000, id: 'cosmic', name: 'Cosmic Champion', emoji: '⭐', color: '#FF6B9D' }
 ];
 const CERTIFICATE_INTERVAL = 3;
 
@@ -4606,6 +4606,19 @@ function getAchievements(){
   catch { return {badges:[],certificates:[],homework_count:0}; }
 }
 function saveAchievements(a){ try { localStorage.setItem(getAchievementsKey(),JSON.stringify(a)); }catch{} }
+
+// Reset all achievements for all users in localStorage
+window.resetAllAchievements = function() {
+  if(!confirm("WARNING: This will permanently delete ALL achievement data for all users. Are you sure?")) return;
+  let count = 0;
+  for(let key in localStorage) {
+    if(key.startsWith('numera:achievements:') || key.startsWith('numera:gems:')) {
+      localStorage.removeItem(key);
+      count++;
+    }
+  }
+  alert(`Reset ${count} achievement/gem records`);
+}
 
 function checkNewUnlocks(gemsTotal,isNewSubmission=true){
   const a=getAchievements(), newB=[], newC=[];
@@ -4627,18 +4640,24 @@ function checkNewUnlocks(gemsTotal,isNewSubmission=true){
 
 function showPrizeProgress(gemsTotal){
   const nxt=BADGE_THRESHOLDS.find(b=>gemsTotal<b.gems);
-  if(!nxt) return `<div class="card prize-progress-card"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div></div></div>`;
+  const unlockedBadges = BADGE_THRESHOLDS.filter(b=>gemsTotal>=b.gems);
+  if(!nxt) {
+    const badgeList = unlockedBadges.map(b=>`${b.emoji} ${b.name}`).join(' · ');
+    return `<div class="card prize-progress-card unlocked-all"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div><div class="badges-summary">${badgeList}</div></div></div>`;
+  }
   const gn=nxt.gems-gemsTotal, prev=BADGE_THRESHOLDS.find(b=>b.gems<gemsTotal), pct=((gemsTotal-(prev?.gems||0))/(nxt.gems-(prev?.gems||0)))*100;
-  return `<div class="card prize-progress-card"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems collected</span><span class="next-prize-name">${nxt.emoji} ${nxt.name}</span></div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><span class="gems-needed">${gn} more gems to unlock ${nxt.name}</span></div></div>`;
+  const currentBadge = prev ? `${prev.emoji} ${prev.name}` : 'No badge yet';
+  return `<div class="card prize-progress-card"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="current-badge">Current: ${currentBadge}</span></div><div class="progress-section"><div class="next-prize-name">Next: ${nxt.emoji} ${nxt.name}</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><strong>${gn}</strong> more gems to unlock</div></div></div>`;
 }
 
 function showNewUnlocks(newB,newC){
   if(newB.length===0 && newC.length===0) return;
-  let h=`<div class="modal-overlay" onclick="if(event.target===this) document.querySelector('.unlock-modal')?.remove()"><div class="unlock-modal card"><div class="unlock-header"><div class="confetti-burst">🎉 ⭐ 🎊</div><h2>New Prize Unlocked!</h2></div><div class="unlock-content">`;
-  if(newB.length>0){ h+=`<div class="unlocked-badges">`; for(const b of newB) h+=`<div class="badge-unlock" style="border-color: ${b.color}"><div class="badge-emoji">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-gems">${b.gems} gems</div></div>`; h+=`</div>`; }
-  if(newC.length>0){ h+=`<div class="unlocked-certificates">`; for(const c of newC) h+=`<div class="certificate-unlock"><div class="certificate-emoji">${c.emoji}</div><div class="certificate-text"><div class="certificate-title">Milestone Certificate #${c.number}</div><div class="certificate-subtitle">${c.homeworks} homeworks completed</div></div></div>`; h+=`</div>`; }
+  let h=`<div class="modal-overlay" onclick="if(event.target===this) document.querySelector('.unlock-modal')?.remove()"><div class="unlock-modal card pop-animation"><div class="unlock-header"><div class="confetti-burst">🎉</div><div class="confetti-burst">⭐</div><div class="confetti-burst">🎊</div><h2>New Prize Unlocked!</h2></div><div class="unlock-content">`;
+  if(newB.length>0){ h+=`<div class="unlocked-badges">`; for(const b of newB) h+=`<div class="badge-unlock explosion-animation" style="border-color: ${b.color}"><div class="badge-emoji">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-gems">${b.gems} gems</div></div>`; h+=`</div>`; }
+  if(newC.length>0){ h+=`<div class="unlocked-certificates">`; for(const c of newC) h+=`<div class="certificate-unlock explosion-animation"><div class="certificate-emoji">${c.emoji}</div><div class="certificate-text"><div class="certificate-title">Milestone Certificate #${c.number}</div><div class="certificate-subtitle">${c.homeworks} homeworks completed</div></div></div>`; h+=`</div>`; }
   h+=`</div><div class="unlock-footer"><button class="btn green block" onclick="document.querySelector('.unlock-modal')?.remove()">Awesome! 🚀</button><button class="btn secondary block" onclick="myPrizesPage(); document.querySelector('.unlock-modal')?.remove();">View My Prizes</button></div></div></div>`;
   const m=document.createElement('div'); m.innerHTML=h; document.body.appendChild(m);
+  // Trigger animation by removing animation class and re-adding (if already present)
   setTimeout(()=>{ m.querySelector('.unlock-modal')?.remove(); }, 8000);
 }
 
