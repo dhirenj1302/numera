@@ -4361,14 +4361,35 @@ window.checkPractice=()=>{
   }
 };
 function renderCorrect(firstTry,upgraded=false){
-  const praise = firstTry
-    ? "Fantastic! You got it on your first attempt."
-    : "Well done! You learned from the mistake and mastered the skill.";
+  const record = state.attempts[state.index] || {};
+  const hintCount = record.hint_count || 0;
+  const hintUsed = record.hint_used || false;
+
+  let praise, feedbackMsg, emoji;
+  if(upgraded){
+    praise = "Well done! You learned from the mistake and mastered the skill.";
+    feedbackMsg = "You learned from the mistake and mastered the skill.";
+    emoji = "🏆";
+    // Don't change title for upgraded score
+  }else if(firstTry && !hintUsed){
+    praise = "Fantastic! You got it on your first attempt.";
+    feedbackMsg = "You got it on your first attempt with no hints!";
+    emoji = "🌟";
+  }else if(firstTry && hintUsed){
+    praise = `Well done! You got it with ${hintCount} ${hintCount===1?"hint":"hints"}.`;
+    feedbackMsg = `You got it with ${hintCount} ${hintCount===1?"hint":"hints"} — great persistence!`;
+    emoji = "💪";
+  }else{
+    praise = "Well done! You learned from the mistake and mastered the skill.";
+    feedbackMsg = "You learned from the mistake and mastered the skill.";
+    emoji = "🏆";
+  }
+
   app.innerHTML=shell(`
     <div class="mission">
-      <div class="mascot">${firstTry?"🌟":"🏆"}</div>
-      <h1>${firstTry?"Fantastic!":"Score upgraded!"}</h1>
-      <div class="feedback good">${firstTry?"You got it on your first attempt.":"You learned from the mistake and mastered the skill."}</div>
+      <div class="mascot">${emoji}</div>
+      <h1>${upgraded?"Score upgraded!":firstTry?"Fantastic!":"Great work!"}</h1>
+      <div class="feedback good">${feedbackMsg}</div>
       ${voiceControl()}
       <button class="btn green block" style="margin-top:10px" onclick="nextQuestion()">${nextButtonLabel()}</button>
     </div>
@@ -4700,7 +4721,7 @@ function showPrizeProgress(gemsTotal){
     const badgeList = unlockedBadges.map(b=>`${b.emoji} ${b.name}`).join(' · ');
     return `<div class="card prize-progress-card unlocked-all clickable" onclick="showGemProgression()"><div class="prize-progress-content"><div class="prize-status"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="prize-status-text">🌟 All badges unlocked!</span></div><div class="badges-summary">${badgeList}</div></div></div>`;
   }
-  const gn=nxt.gems-gemsTotal, prev=BADGE_THRESHOLDS.find(b=>b.gems<gemsTotal), pct=((gemsTotal-(prev?.gems||0))/(nxt.gems-(prev?.gems||0)))*100;
+  const gn=nxt.gems-gemsTotal, prev=BADGE_THRESHOLDS.filter(b=>b.gems<=gemsTotal).pop(), pct=((gemsTotal-(prev?.gems||0))/(nxt.gems-(prev?.gems||0)))*100;
   const currentBadge = prev ? `${prev.emoji} ${prev.name}` : 'No badge yet';
   return `<div class="card prize-progress-card clickable" onclick="showGemProgression()"><div class="prize-progress-header"><span class="gem-count">💎 ${gemsTotal} gems</span><span class="current-badge">Current: ${currentBadge}</span></div><div class="progress-section"><div class="next-prize-name">Next: ${nxt.emoji} ${nxt.name}</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${Math.min(100,pct)}%"></div></div><div class="prize-progress-footer"><strong>${gn}</strong> more gems to unlock</div></div></div>`;
 }
