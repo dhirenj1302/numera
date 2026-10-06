@@ -618,6 +618,90 @@ function flagUntypeableFractionParts(question){
   return msgs.join("; ");
 }
 
+// ---------------------------------------------------------------------------
+// Rounding validation.
+//
+// Detects rounding questions and validates the answer mathematically.
+// Extracts the number to round, the target precision, and calculates the
+// correct answer to compare against what the AI provided.
+// ---------------------------------------------------------------------------
+
+/** Extract a number (including decimals) from a string. Returns the first number found, or null. */
+function extractNumberFromString(str){
+  if(!str) return null;
+  const m = String(str).match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+/** Detect rounding target from prompt. Returns "whole", "1dp", "2dp", "nearest_0.5", etc., or null. */
+function detectRoundingTarget(prompt){
+  const p = String(prompt).toLowerCase();
+  if(/\brounding?\s+to\s+the\s+nearest\s+whole/.test(p) || /\bnearest\s+whole\s+number/.test(p)) return "whole";
+  if(/\brounding?\s+to\s+1\s+decimal/.test(p) || /\b1\s+decimal\s+place/.test(p) || /\b1\s*dp\b/.test(p)) return "1dp";
+  if(/\brounding?\s+to\s+2\s+decimals?/.test(p) || /\b2\s+decimal\s+places?/.test(p) || /\b2\s*dp\b/.test(p)) return "2dp";
+  if(/\brounding?\s+to\s+the\s+nearest\s+0\.5/.test(p) || /\bnearest\s+0\.5/.test(p)) return "nearest_0.5";
+  if(/\brounding?\s+to\s+the\s+nearest\s+10/.test(p) || /\bnearest\s+10\b/.test(p)) return "nearest_10";
+  if(/\brounding?\s+to\s+the\s+nearest\s+100/.test(p) || /\bnearest\s+100\b/.test(p)) return "nearest_100";
+  return null;
+}
+
+/** Calculate the correct rounded answer given a number and target. */
+function calculateCorrectRounding(number, target){
+  const n = Number(number);
+  if(!Number.isFinite(n)) return null;
+
+  switch(target){
+    case "whole":
+      return String(Math.round(n));
+    case "1dp":
+      return (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, "");
+    case "2dp":
+      return (Math.round(n * 100) / 100).toFixed(2);
+    case "nearest_0.5":
+      return String(Math.round(n * 2) / 2);
+    case "nearest_10":
+      return String(Math.round(n / 10) * 10);
+    case "nearest_100":
+      return String(Math.round(n / 100) * 100);
+    default:
+      return null;
+  }
+}
+
+/** Validate a rounding question. Returns warning string if validation fails, else "". */
+function validateRounding(question){
+  if(!question || question.type !== "number") return "";
+
+  const prompt = String(question.prompt || "").toLowerCase();
+  const target = detectRoundingTarget(prompt);
+  if(!target) return ""; // Not a rounding question
+
+  // Extract the number to be rounded from the prompt
+  const numberMatch = String(question.prompt).match(/(\d+\.?\d*)\s*(?:to|—|->|should be rounded)/i);
+  const numberToRound = numberMatch ? parseFloat(numberMatch[1]) : extractNumberFromString(question.prompt);
+  if(!Number.isFinite(numberToRound)) return ""; // Can't determine number to round
+
+  const stored = String(question.answer || "").trim();
+  if(!PLAIN_NUMBER.test(stored)) return ""; // Non-numeric answer
+
+  const correct = calculateCorrectRounding(numberToRound, target);
+  if(!correct) return "";
+
+  // Compare: normalize for minor formatting differences (3.0 vs 3)
+  const storedNorm = String(parseFloat(stored));
+  const correctNorm = String(parseFloat(correct));
+
+  if(storedNorm !== correctNorm){
+    const before = question.answer;
+    question.answer = correct;
+    question.requires_teacher_check = true;
+    question._rounding_corrected = true;
+    return `rounding answer "${before}" is mathematically incorrect (${numberToRound} rounded to ${target} = ${correct}), corrected and flagged for review`;
+  }
+  return "";
+}
+
+
 async function extractPage(context,imageUrl,pageIndex,correctionMemory=""){
   const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.${correctionMemory}
 
@@ -829,6 +913,10 @@ export async function onRequestPost(context){
           const fracWarn = flagUntypeableFractionParts(question);
           if(fracWarn){
             warnings.push(`Page ${i+1}: ${fracWarn}`);
+          }
+          const roundingWarn = validateRounding(question);
+          if(roundingWarn){
+            warnings.push(`Page ${i+1}: ${roundingWarn}`);
           }
           // Independent second read for visual questions the AI flagged for check.
           if(question.needs_visual && question.requires_teacher_check){
