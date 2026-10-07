@@ -701,6 +701,70 @@ function validateRounding(question){
   return "";
 }
 
+// ---------------------------------------------------------------------------
+// UK Coin Validation
+//
+// Validates that any mentioned coin amounts are valid UK denominations.
+// Detects issues like "8p" (not a real coin) in answer text.
+// ---------------------------------------------------------------------------
+const VALID_UK_COINS = {1:true, 2:true, 5:true, 10:true, 20:true, 50:true, 100:true, 200:true};
+
+function detectInvalidCoins(text){
+  if(!text) return [];
+  const invalid = [];
+  const matches = String(text).matchAll(/(\d+)p?\b/gi);
+  for(const m of matches){
+    const val = parseInt(m[1], 10);
+    if(!VALID_UK_COINS[val]){
+      const context = text.slice(Math.max(0, m.index-30), m.index+30);
+      if(/\b(coin|pay|cost|spend|change|price)\b/i.test(context)){
+        invalid.push({amount: val, text: m[0]});
+      }
+    }
+  }
+  return invalid;
+}
+
+function validateCoinDenominations(question){
+  if(!question) return "";
+  const answerInvalid = detectInvalidCoins(question.answer);
+  if(answerInvalid.length){
+    question.requires_teacher_check = true;
+    return `answer contains invalid UK coin amounts: ${answerInvalid.map(x => x.text).join(", ")} — valid coins are 1p, 2p, 5p, 10p, 20p, 50p, £1, £2`;
+  }
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// Type/Format Suggestion Detection
+//
+// Detects mismatches between question content and answer type without blocking.
+// Examples: coins question marked as multiple_choice, sequence marked as number.
+// Returns metadata object or empty string.
+// ---------------------------------------------------------------------------
+function detectTypeFormatMismatch(question){
+  if(!question) return "";
+  const type = String(question.type || "");
+  const prompt = String(question.prompt || "").toLowerCase();
+  const answer = String(question.answer || "").toLowerCase();
+  
+  if(type === "multiple_choice"){
+    if(/\b(coin|pay|spend|change|price)\b/i.test(prompt) && answer.includes(",")){
+      return {suggestion: "This question appears to be about coins, but is marked as multiple_choice. Consider using type: coins for better student experience.", type_suggestion: "coins"};
+    }
+    if(/\b(order|arrange|smallest to largest|largest to smallest|sort)\b/i.test(prompt) && answer.includes(",")){
+      return {suggestion: "This question asks to order/arrange values, but is marked as multiple_choice. Consider using type: sequence.", type_suggestion: "sequence"};
+    }
+  }
+  
+  if(type === "sequence" && /\b(coin|pay|spend|pence|£)\b/i.test(prompt)){
+    return {suggestion: "This question appears to be about coins, but is marked as sequence. Consider using type: coins.", type_suggestion: "coins"};
+  }
+  
+  return "";
+}
+
+
 
 async function extractPage(context,imageUrl,pageIndex,correctionMemory=""){
   const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.${correctionMemory}
@@ -915,6 +979,15 @@ export async function onRequestPost(context){
             warnings.push(`Page ${i+1}: ${fracWarn}`);
           }
           const roundingWarn = validateRounding(question);
+          const coinDenomWarn = validateCoinDenominations(question);
+          if(coinDenomWarn){
+            warnings.push(`Page ${i+1}: ${coinDenomWarn}`);
+          }
+          const formatSuggestion = detectTypeFormatMismatch(question);
+          if(formatSuggestion){
+            question._format_suggestion = formatSuggestion.suggestion;
+            question._type_suggestion = formatSuggestion.type_suggestion;
+          }
           if(roundingWarn){
             warnings.push(`Page ${i+1}: ${roundingWarn}`);
           }
