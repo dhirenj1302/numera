@@ -480,6 +480,52 @@ function finalValueAfterLastEquals(working){
   return matches[matches.length - 1][1];
 }
 
+// ---------------------------------------------------------------------------
+// Validate "total/sum" decimal questions that mix whole numbers and fractions
+// with power-of-ten denominators, e.g. "Write the total of 20, 3/10 and 9/100
+// as a decimal" -> 20 + 0.3 + 0.09 = 20.39. Only acts when the prompt asks for
+// a total/sum and every fraction converts exactly to a decimal, so it never
+// guesses. A mismatch is corrected and flagged for teacher confirmation.
+// ---------------------------------------------------------------------------
+function validateDecimalAddition(question){
+  if(!question || typeof question !== "object") return "";
+  const type = question.type || "number";
+  if(type !== "number" && type !== "") return "";
+
+  const prompt = String(question.prompt || "");
+  const stored = String(question.answer ?? "").trim();
+  if(!PLAIN_NUMBER.test(stored)) return "";
+  if(!/\b(total|sum|altogether|add|plus)\b|\+/i.test(prompt)) return "";
+  if(!/decimal/i.test(prompt) && !/\+/.test(prompt)) return "";
+
+  // Fractions first, so their numerators/denominators are not read as wholes.
+  const fracRe = /(\d+)\s*\/\s*(\d+)/g;
+  const parts = [];
+  for(const m of prompt.matchAll(fracRe)){
+    const n = Number(m[1]), d = Number(m[2]);
+    // Only exact decimal fractions (denominator 10, 100, 1000...).
+    if(!d || !/^10*$/.test(String(d))) return "";
+    parts.push(n / d);
+  }
+  if(parts.length === 0) return "";
+
+  // Whole numbers / decimals elsewhere in the prompt (fractions removed).
+  const rest = prompt.replace(fracRe, " ");
+  for(const m of rest.matchAll(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g)) parts.push(Number(m[0]));
+
+  const expected = Math.round(parts.reduce((a,b) => a + b, 0) * 1000) / 1000;
+  const storedNum = Number(stored);
+  if(!Number.isFinite(expected) || !Number.isFinite(storedNum)) return "";
+  if(Math.abs(expected - storedNum) < 0.0005) return "";
+
+  const before = question.answer;
+  const corrected = String(expected);
+  question.answer = corrected;
+  question.requires_teacher_check = true;
+  question._answer_reconciled = true;
+  return `decimal total answer "${before}" does not match the parts (${parts.join(" + ")} = ${corrected}) — corrected to "${corrected}", please confirm`;
+}
+
 function reconcileAnswerToWorking(question){
   if(!question || typeof question !== "object") return "";
 
@@ -701,70 +747,6 @@ function validateRounding(question){
   return "";
 }
 
-// ---------------------------------------------------------------------------
-// UK Coin Validation
-//
-// Validates that any mentioned coin amounts are valid UK denominations.
-// Detects issues like "8p" (not a real coin) in answer text.
-// ---------------------------------------------------------------------------
-const VALID_UK_COINS = {1:true, 2:true, 5:true, 10:true, 20:true, 50:true, 100:true, 200:true};
-
-function detectInvalidCoins(text){
-  if(!text) return [];
-  const invalid = [];
-  const matches = String(text).matchAll(/(\d+)p?\b/gi);
-  for(const m of matches){
-    const val = parseInt(m[1], 10);
-    if(!VALID_UK_COINS[val]){
-      const context = text.slice(Math.max(0, m.index-30), m.index+30);
-      if(/\b(coin|pay|cost|spend|change|price)\b/i.test(context)){
-        invalid.push({amount: val, text: m[0]});
-      }
-    }
-  }
-  return invalid;
-}
-
-function validateCoinDenominations(question){
-  if(!question) return "";
-  const answerInvalid = detectInvalidCoins(question.answer);
-  if(answerInvalid.length){
-    question.requires_teacher_check = true;
-    return `answer contains invalid UK coin amounts: ${answerInvalid.map(x => x.text).join(", ")} — valid coins are 1p, 2p, 5p, 10p, 20p, 50p, £1, £2`;
-  }
-  return "";
-}
-
-// ---------------------------------------------------------------------------
-// Type/Format Suggestion Detection
-//
-// Detects mismatches between question content and answer type without blocking.
-// Examples: coins question marked as multiple_choice, sequence marked as number.
-// Returns metadata object or empty string.
-// ---------------------------------------------------------------------------
-function detectTypeFormatMismatch(question){
-  if(!question) return "";
-  const type = String(question.type || "");
-  const prompt = String(question.prompt || "").toLowerCase();
-  const answer = String(question.answer || "").toLowerCase();
-  
-  if(type === "multiple_choice"){
-    if(/\b(coin|pay|spend|change|price)\b/i.test(prompt) && answer.includes(",")){
-      return {suggestion: "This question appears to be about coins, but is marked as multiple_choice. Consider using type: coins for better student experience.", type_suggestion: "coins"};
-    }
-    if(/\b(order|arrange|smallest to largest|largest to smallest|sort)\b/i.test(prompt) && answer.includes(",")){
-      return {suggestion: "This question asks to order/arrange values, but is marked as multiple_choice. Consider using type: sequence.", type_suggestion: "sequence"};
-    }
-  }
-  
-  if(type === "sequence" && /\b(coin|pay|spend|pence|£)\b/i.test(prompt)){
-    return {suggestion: "This question appears to be about coins, but is marked as sequence. Consider using type: coins.", type_suggestion: "coins"};
-  }
-  
-  return "";
-}
-
-
 
 async function extractPage(context,imageUrl,pageIndex,correctionMemory=""){
   const prompt=`You are processing PAGE ${pageIndex + 1} of a UK primary-school maths worksheet.${correctionMemory}
@@ -961,48 +943,45 @@ export async function onRequestPost(context){
         const page=await extractPage(context,images[i],i,correctionMemory);
         if(page.page_topic) pageTopics.push(page.page_topic);
         if(page.warning) warnings.push(`Page ${i+1}: ${page.warning}`);
-        for(const question of page.questions||[]){
+        for(let j=0; j<(page.questions||[]).length; j++){
+          const question = page.questions[j];
           if(question.repair_warning){
-            warnings.push(`Page ${i+1}: a multi-part question needs teacher correction because ${question.repair_warning}`);
+            warnings.push(`Page ${i+1}, Question ${j+1}: a multi-part question needs teacher correction because ${question.repair_warning}`);
           }
           reconcileMoney(question);
-          const answerWarn = reconcileAnswerToWorking(question);
+          // Try decimal addition validation first (catches component-sum errors)
+          let decimalWarn = validateDecimalAddition(question);
+          // Fall back to general reconciliation if no decimal error found
+          const answerWarn = decimalWarn || reconcileAnswerToWorking(question);
           if(answerWarn){
-            warnings.push(`Page ${i+1}: ${answerWarn}`);
+            warnings.push(`Page ${i+1}, Question ${j+1}: ${answerWarn}`);
           }
           const coinsWarn = reconcileCoins(question);
           if(coinsWarn){
-            warnings.push(`Page ${i+1}: ${coinsWarn}`);
+            warnings.push(`Page ${i+1}, Question ${j+1}: ${coinsWarn}`);
           }
           const fracWarn = flagUntypeableFractionParts(question);
           if(fracWarn){
-            warnings.push(`Page ${i+1}: ${fracWarn}`);
+            warnings.push(`Page ${i+1}, Question ${j+1}: ${fracWarn}`);
           }
           const roundingWarn = validateRounding(question);
-          const coinDenomWarn = validateCoinDenominations(question);
-          if(coinDenomWarn){
-            warnings.push(`Page ${i+1}: ${coinDenomWarn}`);
-          }
-          const formatSuggestion = detectTypeFormatMismatch(question);
-          if(formatSuggestion){
-            question._format_suggestion = formatSuggestion.suggestion;
-            question._type_suggestion = formatSuggestion.type_suggestion;
-          }
           if(roundingWarn){
-            warnings.push(`Page ${i+1}: ${roundingWarn}`);
+            warnings.push(`Page ${i+1}, Question ${j+1}: ${roundingWarn}`);
           }
           // Independent second read for visual questions the AI flagged for check.
           if(question.needs_visual && question.requires_teacher_check){
             const scWarn = await selfCheckVisual(context, images[i], i, question);
             if(scWarn){
-              warnings.push(`Page ${i+1}: ${scWarn}`);
+              warnings.push(`Page ${i+1}, Question ${j+1}: ${scWarn}`);
             }
           }
           allQuestions.push({
             ...question,
             page_index:i,
             page_number:i+1,
-            source_label:`Page ${i+1}`
+            question_index:j,
+            question_number:j+1,
+            source_label:`Page ${i+1}, Question ${j+1}`
           });
         }
       }catch(error){
