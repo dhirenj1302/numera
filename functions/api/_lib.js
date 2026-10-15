@@ -37,6 +37,31 @@ export async function hashPin(pin, salt) {
   return digest(`${salt}:${pin}`);
 }
 
+/**
+ * Cloudflare D1 occasionally fails with a transient storage error (for example
+ * "D1_ERROR: Internal error in D1 DB storage caused object to be reset"). The
+ * statement is safe to repeat, so we retry a few times before giving up.
+ */
+const TRANSIENT_DB_ERROR = /D1_ERROR|object to be reset|Network connection lost|storage caused/i;
+
+export function isTransientDbError(err) {
+  return TRANSIENT_DB_ERROR.test(String(err?.message || err || ""));
+}
+
+export async function withDbRetry(fn, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || i === attempts - 1) throw err;
+      await new Promise(r => setTimeout(r, 150 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 /** Generate an opaque session token. Two UUIDs give ample entropy. */
 export async function sessionToken() {
   return crypto.randomUUID() + crypto.randomUUID();
