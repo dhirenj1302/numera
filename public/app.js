@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.20";
+const NUMERA_VERSION = "v3.21";
 const state = {
   files: [],
   sourceImages: [],
@@ -609,138 +609,36 @@ function renderLanding(){
 
 function renderDemoAge(){
   const ages=[4,5,6,7,8,9,10,11];
-  const ageLabels={4:"Reception",5:"Year 1",6:"Year 2",7:"Year 3",8:"Year 4",9:"Year 5",10:"Year 6",11:"Year 7"};
-  const isLoggedIn=!!state.studentSession;
-  
   app.innerHTML=shell(`
     <section class="mobile-page-head demo-age-head">
       <span class="step-chip">Student demo</span>
       <h1>How old is the child?</h1>
-      <p class="muted">Verve will create a short maths demo at an appropriate level. The demo won't affect homework marks or gems.</p>
+      <p class="muted">Verve will create a short maths demo at an appropriate level.</p>
     </section>
     <div class="card demo-age-card">
       <div class="age-choice-grid">
-        ${ages.map(age=>`
-          <button class="age-choice" onclick="selectDemoAge(${age})">
-            <strong>${age}</strong>
-            <span>${ageLabels[age] || 'years old'}</span>
-          </button>
-        `).join("")}
+        ${ages.map(age=>`<button class="age-choice" onclick="startDemo(${age})"><strong>${age}</strong><span>years old</span></button>`).join("")}
       </div>
-      <p class="small muted demo-age-note">Five questions, progressive hints, and feedback to show how Verve helps students improve.</p>
-    </div>
-    
-    <div class="card">
-      <h3 style="margin-top:0">How to continue</h3>
-      ${isLoggedIn?`
-        <p>You're signed in as <strong>${esc(state.studentSession.display_name)}</strong>. Your demo score will be saved to your profile.</p>
-        <button class="btn primary block" onclick="proceedWithDemo()">Continue as ${esc(state.studentSession.display_name)}</button>
-        <button class="btn ghost block" onclick="logoutStudent()">Use a different account</button>
-      `:`
-        <p>Sign in to save your demo score to your profile, or continue as a guest.</p>
-        <button class="btn primary block" onclick="showDemoGuestName()">Continue as guest</button>
-        <button class="btn secondary block" onclick="showDemoStudentLogin()">Sign in as a student</button>
-      `}
+      <p class="small muted demo-age-note">The demo contains five questions and shows how Verve teaches, gives progressive hints and helps improve a score.</p>
     </div>
   `,true);
 }
 
-window.selectDemoAge=age=>{
-  state.selectedDemoAge=Number(age);
-};
 
-window.showDemoGuestName=()=>{
-  const modal=document.createElement("div");
-  modal.className="modal-overlay";
-  modal.innerHTML=`
-    <div class="modal-box">
-      <h2>What's your name?</h2>
-      <p class="muted">We'll use this to personalize your feedback.</p>
-      <form onsubmit="proceedGuestDemo(event)">
-        <div class="field">
-          <input id="guestNameInput" type="text" placeholder="e.g. Sarah" autocapitalize="words" required>
-        </div>
-        <button class="btn primary block">Start demo</button>
-        <button type="button" class="btn ghost block" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-      </form>
-    </div>
-  `;
-  app.appendChild(modal);
-  document.getElementById("guestNameInput").focus();
-};
-
-window.proceedGuestDemo=async e=>{
-  e.preventDefault();
-  const name=document.getElementById("guestNameInput").value.trim();
-  if(!name) return alert("Please enter your name");
-  state.guestName=name;
-  state.isGuestDemo=true;
-  document.querySelector(".modal-overlay").remove();
-  await startDemo();
-};
-
-window.showDemoStudentLogin=()=>{
-  app.innerHTML=shell(`
-    <section class="mobile-page-head">
-      <span class="step-chip">Student sign in</span>
-      <h1>Sign in to save your demo</h1>
-      <p class="muted">Your demo score will be saved to your profile when you finish.</p>
-    </section>
-    <form class="card" onsubmit="loginStudentForDemo(event)">
-      <div class="field">
-        <label>Username or email</label>
-        <input id="demoUsername" type="text" autocapitalize="none" autocomplete="username" placeholder="e.g. student123 or you@school.uk" required>
-      </div>
-      <div class="field">
-        <label>Password</label>
-        <input id="demoPassword" type="password" autocomplete="current-password" placeholder="••••••••" required>
-      </div>
-      <button class="btn primary block">Sign in</button>
-      <button type="button" class="btn ghost block" onclick="location.hash='#/demo'">Back</button>
-    </form>
-  `,true);
-};
-
-window.loginStudentForDemo=async e=>{
-  e.preventDefault();
-  const username=document.getElementById("demoUsername").value.trim();
-  const password=document.getElementById("demoPassword").value;
-  if(!username||!password) return alert("Enter username and password");
-  try{
-    const session=await api("/api/accounts",{method:"POST",body:JSON.stringify({action:"login_student",username,password})});
-    state.studentSession=session;
-    localStorage.setItem("numera:studentSession",JSON.stringify(session));
-    state.isGuestDemo=false;
-    location.hash="#/demo";
-  }catch(err){
-    alert(err.message);
-  }
-};
-
-window.proceedWithDemo=async()=>{
-  state.isGuestDemo=false;
-  await startDemo();
-};
-
-window.startDemo=async()=>{
-  const age=state.selectedDemoAge;
-  if(!Number.isInteger(age)||age<4||age>11){
+window.startDemo = async age => {
+  const selectedAge=Number(age);
+  if(!Number.isInteger(selectedAge) || selectedAge<4 || selectedAge>11){
     location.hash="#/demo";
     return;
   }
-  try{
-    const ageLabel={4:"Reception",5:"Year 1",6:"Year 2",7:"Year 3",8:"Year 4",9:"Year 5",10:"Year 6",11:"Year 7"}[age];
-    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Preparing ${ageLabel} demo…</h2><p class="muted">Verve is choosing suitable questions.</p></div>`,true);
-    
-    const body={age};
-    if(state.isGuestDemo) body.guest_name=state.guestName;
-    if(state.studentSession) body.student_id=state.studentSession.student_id;
-    
-    const demo=await api("/api/demo",{method:"POST",body:JSON.stringify(body)});
-    state.demoHomeworkId=demo.id;
-    state.isDemoSession=true;
-    location.hash=`#/play?id=${demo.id}`;
-  }catch(e){
+  try {
+    app.innerHTML=shell(`<div class="mission"><div class="spinner"></div><h2>Preparing an age-${selectedAge} demo…</h2><p class="muted">Verve is choosing suitable questions.</p></div>`,true);
+    const demo = await api("/api/demo", {
+      method:"POST",
+      body:JSON.stringify({age:selectedAge})
+    });
+    location.hash = `#/play?id=${demo.id}`;
+  } catch(e) {
     alert(e.message);
     location.hash="#/demo";
   }
@@ -4850,7 +4748,7 @@ window.showGemProgression=function(){
   const g=getGemsTotal(), a=getAchievements();
   let p=`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">Your journey to mastery</p></div><div class="gem-journey">`;
   for(let i=0;i<BADGE_THRESHOLDS.length;i++){
-    const b=BADGE_THRESHOLDS[i], isUnlocked=a.badges.includes(b.id), isNext=(i>0?BADGE_THRESHOLDS[i-1].gems:0)<g && g<b.gems;
+    const b=BADGE_THRESHOLDS[i], isUnlocked=g>=b.gems, isNext=(i>0?BADGE_THRESHOLDS[i-1].gems:0)<g && g<b.gems;
     const gemsToThis=b.gems-g, prevThreshold=i>0?BADGE_THRESHOLDS[i-1].gems:0, pct=((g-prevThreshold)/(b.gems-prevThreshold))*100;
     let status='locked', statusText=`${gemsToThis} gems away`;
     if(isUnlocked){ status='unlocked'; statusText='✓ Unlocked'; }
@@ -4865,8 +4763,8 @@ window.showGemProgression=function(){
 
 window.myPrizesPage=function(){
   const a=getAchievements(), g=getGemsTotal();
-  let p=`<div class="mission"><h1>${esc(state.studentName)}'s Prize Gallery</h1><p class="muted">Your achievements and unlocked badges</p></div><div class="card gems-summary"><div class="gems-summary-content"><span class="gem-total">💎 ${g} gems</span><span class="badges-count">${a.badges.length} badges collected</span></div></div><div class="prizes-section"><h2>🏆 Achievement Badges</h2><div class="badges-grid">`;
-  for(const b of BADGE_THRESHOLDS){ if(a.badges.includes(b.id)) p+=`<div class="badge-card unlocked" style="border-color: ${b.color}"><div class="badge-icon">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">✓ Unlocked</div></div>`; else { const gn=b.gems-g; p+=`<div class="badge-card locked"><div class="badge-icon">🔒</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">${gn} gems away</div></div>`; } }
+  let p=`<div class="mission"><h1>${esc(state.studentName)}'s Prize Gallery</h1><p class="muted">Your achievements and unlocked badges</p></div><div class="card gems-summary"><div class="gems-summary-content"><span class="gem-total">💎 ${g} gems</span><span class="badges-count">${BADGE_THRESHOLDS.filter(b=>g>=b.gems).length} badges collected</span></div></div><div class="prizes-section"><h2>🏆 Achievement Badges</h2><div class="badges-grid">`;
+  for(const b of BADGE_THRESHOLDS){ if(g>=b.gems) p+=`<div class="badge-card unlocked" style="border-color: ${b.color}"><div class="badge-icon">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">✓ Unlocked</div></div>`; else { const gn=b.gems-g; p+=`<div class="badge-card locked"><div class="badge-icon">🔒</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">${gn} gems away</div></div>`; } }
   p+=`</div></div>`;
   if(a.certificates && a.certificates.length>0){ p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><div class="certificates-list">`; for(let i=0;i<a.certificates.length;i++){ const cn=i+1; p+=`<div class="certificate-item"><div class="certificate-icon">📜</div><div class="certificate-details"><div class="certificate-title">Milestone Certificate #${cn}</div><div class="certificate-subtitle">${cn*CERTIFICATE_INTERVAL} homeworks completed</div></div></div>`; } p+=`</div></div>`; } else { p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><p class="muted">Complete ${CERTIFICATE_INTERVAL} homeworks to earn your first certificate!</p></div>`; }
   const ncn=Math.floor(a.homework_count/CERTIFICATE_INTERVAL)+1, hfnc=ncn*CERTIFICATE_INTERVAL, hr=Math.max(0,hfnc-a.homework_count);
@@ -5284,49 +5182,4 @@ async function bootstrap(){
   }
   router();
 }
-
-// Add this logic to the quiz completion/results section
-// After the student submits their last answer and sees results
-
-window.recordDemoCompletion=async()=>{
-  if(!state.isDemoSession) return;
-  
-  const homeworkId=state.demoHomeworkId;
-  const allAnswers=Object.values(state.answers||{}).length;
-  const correct=Object.values(state.answers||{}).filter(a=>a.correct).length;
-  const percentage=allAnswers>0?Math.round((correct/allAnswers)*100):0;
-  
-  try{
-    if(state.studentSession){
-      // Save to student profile
-      await api("/api/accounts",{
-        method:"POST",
-        body:JSON.stringify({
-          action:"record_demo",
-          student_id:state.studentSession.student_id,
-          age:state.selectedDemoAge,
-          score:percentage,
-          completed_at:new Date().toISOString()
-        })
-      });
-    }
-    
-    // Store locally
-    const demographics=JSON.parse(localStorage.getItem("numera:demographics")||"{}");
-    demographics.demo_results={
-      age:state.selectedDemoAge,
-      score:percentage,
-      completed_at:new Date().toISOString(),
-      was_guest:state.isGuestDemo,
-      guest_name:state.guestName
-    };
-    localStorage.setItem("numera:demographics",JSON.stringify(demographics));
-  }catch(e){
-    console.warn("Could not record demo results:",e.message);
-  }
-  
-  // Clear demo flags
-  state.isDemoSession=false;
-  state.demoHomeworkId=null;
-};
-};
+bootstrap();
