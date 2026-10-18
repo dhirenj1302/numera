@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.23";
+const NUMERA_VERSION = "v3.24";
 const state = {
   files: [],
   sourceImages: [],
@@ -4745,26 +4745,38 @@ function showNewUnlocks(newB,newC){
 }
 
 window.showGemProgression=function(){
-  const g=getGemsTotal(), a=getAchievements();
-  let p=`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">Your journey to mastery</p></div><div class="gem-journey">`;
-  for(let i=0;i<BADGE_THRESHOLDS.length;i++){
-    const b=BADGE_THRESHOLDS[i], isUnlocked=g>=b.gems, isNext=(i>0?BADGE_THRESHOLDS[i-1].gems:0)<g && g<b.gems;
-    const gemsToThis=b.gems-g, prevThreshold=i>0?BADGE_THRESHOLDS[i-1].gems:0, pct=((g-prevThreshold)/(b.gems-prevThreshold))*100;
-    let status='locked', statusText=`${gemsToThis} gems away`;
-    if(isUnlocked){ status='unlocked'; statusText='✓ Unlocked'; }
-    else if(isNext){ status='next'; statusText=`${gemsToThis} gems away`; }
-    p+=`<div class="progression-item ${status}"><div class="progression-level"><div class="level-badge" style="border-color: ${b.color}">${b.emoji}</div><div class="level-details"><div class="level-name">${b.name}</div><div class="level-gems">${b.gems} gems</div></div></div><div class="progression-bar-container"><div class="progress-bar" style="width: ${Math.max(0,Math.min(100,pct))}%"></div></div><div class="progression-status">${statusText}</div></div>`;
+  // Gems are the single source of truth: a badge is achieved when the total
+  // reaches its threshold. The page never depends on the stored badges list,
+  // so it cannot show a stale or half-built state.
+  let g=0;
+  try{
+    g=getGemsTotal();
+    let p=`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">💎 ${g} gems · Your journey to mastery</p></div><div class="gem-journey">`;
+    for(let i=0;i<BADGE_THRESHOLDS.length;i++){
+      const b=BADGE_THRESHOLDS[i];
+      const isAchieved=g>=b.gems;
+      const isInProgress=!isAchieved && (i===0?0:BADGE_THRESHOLDS[i-1].gems)<=g;
+      const prevThreshold=i>0?BADGE_THRESHOLDS[i-1].gems:0;
+      const gemsToThis=Math.max(0,b.gems-g);
+      const pct=Math.max(0,Math.min(100,((g-prevThreshold)/(b.gems-prevThreshold))*100));
+      const status=isAchieved?'unlocked':(isInProgress?'next':'locked');
+      const statusText=isAchieved?'✓ Achieved':(isInProgress?`In progress · ${gemsToThis} gems to go`:`${gemsToThis} gems away`);
+      p+=`<div class="progression-item ${status}"><div class="progression-level"><div class="level-badge" style="border-color: ${b.color}">${b.emoji}</div><div class="level-details"><div class="level-name">${b.name}</div><div class="level-gems">${b.gems} gems</div></div></div><div class="progression-bar-container"><div class="progress-bar" style="width: ${pct}%"></div></div><div class="progression-status">${statusText}</div></div>`;
+    }
+    p+=`</div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`;
+    app.innerHTML=shell(p,true);
+    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
+  }catch(err){
+    console.error("Gem progression failed to draw", err);
+    app.innerHTML=shell(`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">You have ${g} gems. We couldn't draw your progression just now. Please try again in a moment.</p></div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`,true);
+    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
   }
-  p+=`</div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`;
-  app.innerHTML=shell(p,true);
-  // Attach event listener for back button
-  document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
 };
 
 window.myPrizesPage=function(){
   const a=getAchievements(), g=getGemsTotal();
   let p=`<div class="mission"><h1>${esc(state.studentName)}'s Prize Gallery</h1><p class="muted">Your achievements and unlocked badges</p></div><div class="card gems-summary"><div class="gems-summary-content"><span class="gem-total">💎 ${g} gems</span><span class="badges-count">${BADGE_THRESHOLDS.filter(b=>g>=b.gems).length} badges collected</span></div></div><div class="prizes-section"><h2>🏆 Achievement Badges</h2><div class="badges-grid">`;
-  for(const b of BADGE_THRESHOLDS){ if(g>=b.gems) p+=`<div class="badge-card unlocked" style="border-color: ${b.color}"><div class="badge-icon">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">✓ Unlocked</div></div>`; else { const gn=b.gems-g; p+=`<div class="badge-card locked"><div class="badge-icon">🔒</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">${gn} gems away</div></div>`; } }
+  for(const b of BADGE_THRESHOLDS){ if(g>=b.gems) p+=`<div class="badge-card unlocked" style="border-color: ${b.color}"><div class="badge-icon">${b.emoji}</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">✓ Achieved</div></div>`; else { const gn=b.gems-g; p+=`<div class="badge-card locked"><div class="badge-icon">🔒</div><div class="badge-name">${b.name}</div><div class="badge-requirement">${b.gems} gems</div><div class="badge-status">${gn} gems away</div></div>`; } }
   p+=`</div></div>`;
   if(a.certificates && a.certificates.length>0){ p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><div class="certificates-list">`; for(let i=0;i<a.certificates.length;i++){ const cn=i+1; p+=`<div class="certificate-item"><div class="certificate-icon">📜</div><div class="certificate-details"><div class="certificate-title">Milestone Certificate #${cn}</div><div class="certificate-subtitle">${cn*CERTIFICATE_INTERVAL} homeworks completed</div></div></div>`; } p+=`</div></div>`; } else { p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><p class="muted">Complete ${CERTIFICATE_INTERVAL} homeworks to earn your first certificate!</p></div>`; }
   const ncn=Math.floor(a.homework_count/CERTIFICATE_INTERVAL)+1, hfnc=ncn*CERTIFICATE_INTERVAL, hr=Math.max(0,hfnc-a.homework_count);
