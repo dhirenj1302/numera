@@ -1152,7 +1152,18 @@
 .badge-card.locked {
   background: #f5f5f5;
   border-color: #ddd !important;
-  opacity: 0.7;
+}
+
+/* Locked (not yet earned) medals are shown greyed out. Earned ones keep their colour. */
+.badge-card.locked .badge-icon,
+.progression-item.locked .level-badge {
+  filter: grayscale(100%);
+  opacity: 0.35;
+}
+
+.progression-item.locked .level-badge {
+  border-color: #ccc !important;
+  background: #f5f5f5;
 }
 
 .badge-icon {
@@ -1339,7 +1350,6 @@
 .progression-item.locked {
   background: #f5f5f5;
   border-color: #ddd;
-  opacity: 0.7;
 }
 
 .progression-level {
