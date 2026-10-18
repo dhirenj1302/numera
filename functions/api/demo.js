@@ -11,7 +11,7 @@ const questionBanks={
     {type:"number",prompt:"How many apples? 🍎🍎🍎🍎",answer:"4",answer_unit:"apples",options:[],hints:hintSet("Touch each apple as you count.","Start at one.","Count: one, two, three, four.","There are 4 apples."),explanation:"There are 4 apples.",topic:"Counting",practice_prompt:"How many? 🍎🍎",practice_answer:"2"},
     {type:"drag",prompt:"Put 3 counters into the box.",answer:"3",drag_item_count:6,options:[],hints:hintSet("Move one counter at a time.","Count each one as you move it.","Stop when you reach three.","You need exactly 3 counters."),explanation:"Three counters belong in the box.",topic:"Counting",practice_prompt:"Show 2 counters.",practice_answer:"2"},
     {type:"multiple_choice",prompt:"Which shape is a circle?",answer:"○",options:["△","□","○"],hints:hintSet("A circle is perfectly round.","It has no corners.","Look for the round one.","○ is the circle."),explanation:"The round shape is a circle.",topic:"Shape",practice_prompt:"Which shape has three sides?",practice_answer:"△"},
-    {type:"number",prompt:"2 add 1 more. How many altogether?",answer:"3",answer_unit:"",options:[],hints:hintSet("Hold up two fingers.","Now put up one more.","Count them all.","2 + 1 = 3."),explanation:"Two and one more make three.",topic:"Addition",practice_prompt:"1 add 1 more?",practice_answer:"2"},
+    {type:"number",prompt:"You have 2 teddies. Your friend gives you 1 more. How many teddies do you have now?",answer:"3",answer_unit:"",options:[],hints:hintSet("Hold up two fingers for your two teddies.","Now put up one more finger for the new teddy.","Count all the fingers up: one, two, three.","2 teddies and 1 more teddy makes 3 teddies."),explanation:"Two teddies and one more teddy make three teddies.",topic:"Addition",practice_prompt:"You have 1 ball. Your friend gives you 1 more. How many balls now?",practice_answer:"2"},
     {type:"multiple_choice",prompt:"Which number is 5?",answer:"5",options:["2","5","8"],hints:hintSet("Five comes after four.","It is more than 2.","It is the middle finger count on one hand.","This is 5."),explanation:"That is the number 5.",topic:"Numbers",practice_prompt:"Which number is 3?",practice_answer:"3"}
   ],
   // Year 1 (age 5): numbers to 20, add/subtract within 10, halves, o'clock.
@@ -78,7 +78,9 @@ const questionBanks={
 export async function onRequestPost(context){
   try{
     const body=await context.request.json().catch(()=>({}));
-    const age=Math.max(6,Math.min(11,Number(body.age)||8));
+    // Ages 4-11 each have their own bank (Reception to Year 7). Do NOT clamp
+    // the lower bound to 6, or 4- and 5-year-olds get the Year 2 questions.
+    const age=Math.max(4,Math.min(11,Number(body.age)||8));
     const questions=questionBanks[age]||questionBanks[8];
     const id=crypto.randomUUID().slice(0,8).toUpperCase();
     const db=context.env.DB;
