@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.25";
+const NUMERA_VERSION = "v3.26";
 const state = {
   files: [],
   sourceImages: [],
@@ -4764,12 +4764,12 @@ window.showGemProgression=function(){
       p+=`<div class="progression-item ${status}"><div class="progression-level"><div class="level-badge" style="border-color: ${b.color}">${b.emoji}</div><div class="level-details"><div class="level-name">${b.name}</div><div class="level-gems">${b.gems} gems</div></div></div><div class="progression-bar-container"><div class="progress-bar" style="width: ${pct}%"></div></div><div class="progression-status">${statusText}</div></div>`;
     }
     p+=`</div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`;
-    app.innerHTML=shell(p,true);
-    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
+    app.innerHTML=shell(p,"backToResultsPage()");
+    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ backToResultsPage(); });
   }catch(err){
     console.error("Gem progression failed to draw", err);
-    app.innerHTML=shell(`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">You have ${g} gems. We couldn't draw your progression just now. Please try again in a moment.</p></div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`,true);
-    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
+    app.innerHTML=shell(`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">You have ${g} gems. We couldn't draw your progression just now. Please try again in a moment.</p></div><button class="btn secondary block" data-action="back-to-results" style="margin-top:20px">← Back to Results</button>`,"backToResultsPage()");
+    document.querySelector('[data-action="back-to-results"]')?.addEventListener('click', ()=>{ backToResultsPage(); });
   }
 };
 
@@ -4781,21 +4781,43 @@ window.myPrizesPage=function(){
   if(a.certificates && a.certificates.length>0){ p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><div class="certificates-list">`; for(let i=0;i<a.certificates.length;i++){ const cn=i+1; p+=`<div class="certificate-item"><div class="certificate-icon">📜</div><div class="certificate-details"><div class="certificate-title">Milestone Certificate #${cn}</div><div class="certificate-subtitle">${cn*CERTIFICATE_INTERVAL} homeworks completed</div></div></div>`; } p+=`</div></div>`; } else { p+=`<div class="prizes-section"><h2>📜 Milestone Certificates</h2><p class="muted">Complete ${CERTIFICATE_INTERVAL} homeworks to earn your first certificate!</p></div>`; }
   const ncn=Math.floor(a.homework_count/CERTIFICATE_INTERVAL)+1, hfnc=ncn*CERTIFICATE_INTERVAL, hr=Math.max(0,hfnc-a.homework_count);
   p+=`<div class="card progress-section"><h3>Progress to Next Certificate</h3><div class="homework-progress"><div class="progress-text">${a.homework_count} / ${hfnc} homeworks</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${(a.homework_count/hfnc)*100}%"></div></div><div class="progress-footer">${hr} more homeworks to unlock Certificate #${ncn}</div></div></div><button class="btn secondary block" data-action="back-from-prizes" style="margin-top:20px">← Back to Results</button>`;
-  app.innerHTML=shell(p,true);
+  app.innerHTML=shell(p,"backToResultsPage()");
   // Attach event listener for back button
-  document.querySelector('[data-action="back-from-prizes"]')?.addEventListener('click', ()=>{ renderComplete(0,0,1); });
+  document.querySelector('[data-action="back-from-prizes"]')?.addEventListener('click', ()=>{ backToResultsPage(); });
+};
+
+// The results screen as it was last shown. Used by "back" from the gem and prize
+// pages so the student returns to THEIR results, not the previous route.
+let lastResultsView=null;
+// Set only while re-drawing the results screen from lastResultsView, so the
+// one-off side effects (gem award, badge/homework checks) do not run twice.
+let restoreResultsView=null;
+window.backToResultsPage=function(){
+  if(!lastResultsView){ return appBack(); }
+  restoreResultsView=lastResultsView;
+  try{
+    const v=lastResultsView;
+    renderComplete(v.original,v.mastery,v.total,v.strengths,v.needs,v.teacherReviewCount,v.submissionId,v.insight,v.gemsTotal);
+  } finally { restoreResultsView=null; }
 };
 
 function renderComplete(original,mastery,total,strengths,needs,teacherReviewCount=0,submissionId="",insight=null,serverGemsTotal=null){
   const op=Math.round(original/total*100), mp=Math.round(mastery/total*100);
+  const restoring=restoreResultsView;
   // Award gems for this homework (once), from the real attempts. The running
   // TOTAL now comes from the server (sum across all the student's submissions),
   // so it accumulates across sessions and devices. Falls back to the local
   // running total only if the server didn't return one (offline/older API).
-  const gemsEarned = insight ? computeGemsEarned(state.pendingSummaryAttempts||[]) : 0;
-  const gemsTotal = (serverGemsTotal!=null && Number.isFinite(Number(serverGemsTotal)))
+  const gemsEarned = restoring ? restoring.gemsEarned : (insight ? computeGemsEarned(state.pendingSummaryAttempts||[]) : 0);
+  const gemsTotal = restoring ? restoring.gemsTotal : ((serverGemsTotal!=null && Number.isFinite(Number(serverGemsTotal)))
     ? Number(serverGemsTotal)
-    : (gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal());
+    : (gemsEarned>0 ? addGems(gemsEarned) : getGemsTotal()));
+  if(!restoring){
+    // Keep this device's copy in step with the server total, so the gem,
+    // progression and prize pages always show the same number as this screen.
+    try{ localStorage.setItem(gemsTotalKey(), String(gemsTotal)); }catch{}
+    lastResultsView={original,mastery,total,strengths,needs,teacherReviewCount,submissionId,insight,gemsEarned,gemsTotal};
+  }
   // Determine the improvement message: perfect score gets special praise
   const improvementMsg = (op === 100 && mp === 100)
     ? `<p class="perfect-score-message">🌟 <strong>Perfect score!</strong> You got every question right on the first try!</p>`
@@ -4827,12 +4849,14 @@ function renderComplete(original,mastery,total,strengths,needs,teacherReviewCoun
       <div id="parentProgress"><div class="spinner small-spinner"></div><p class="muted">Loading past results…</p></div>
     </div>
   `);
-  // Check for newly unlocked badges and certificates
-  const unlockResult = checkNewUnlocks(gemsTotal, gemsEarned > 0);
-  if (unlockResult.unlocked) {
-    setTimeout(() => showNewUnlocks(unlockResult.newBadges, unlockResult.newCertificates), 500);
+  if (!restoring) {
+    // Check for newly unlocked badges and certificates (once per submission)
+    const unlockResult = checkNewUnlocks(gemsTotal, gemsEarned > 0);
+    if (unlockResult.unlocked) {
+      setTimeout(() => showNewUnlocks(unlockResult.newBadges, unlockResult.newCertificates), 500);
+    }
+    if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
   }
-  if (state.voiceEnabled) setTimeout(() => speak(`Excellent work, ${state.studentName}. You completed the mission and improved your understanding.`), 150);
   checkLevelUpOffer();
 }
 
@@ -4863,7 +4887,7 @@ window.startLevelUp=async()=>{
     const data=await api(`/api/level-up?student_username=${encodeURIComponent(state.studentUsername)}&student_token=${encodeURIComponent(state.studentToken)}&t=${Date.now()}`);
     if(!data.available || !data.questions?.length){
       alert(data.message||"No Level Up available yet.");
-      return renderComplete(0,0,1);
+      return backToResultsPage();
     }
     // Synthetic homework — reuse the whole player. Pass questions as an ARRAY
     // directly (the frontend never parses questions_json; the backend normally
@@ -4880,7 +4904,7 @@ window.startLevelUp=async()=>{
     });
     if(!state.homework.questions.length){
       alert("No Level Up available yet.");
-      return renderComplete(0,0,1);
+      return backToResultsPage();
     }
     state.homework.is_level_up=true;
     state.index=0; state.attempts=[];
