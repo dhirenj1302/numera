@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.26";
+const NUMERA_VERSION = "v3.29";
 const state = {
   files: [],
   sourceImages: [],
@@ -2287,7 +2287,8 @@ function normaliseMultipartQuestion(q){
       prompt:p.prompt||`Part ${String.fromCharCode(97+i)}`,
       answer:String(p.answer??""),
       answer_unit:p.answer_unit||"",
-      type:p.type||"number"
+      type:p.type||"number",
+      options:Array.isArray(p.options)?p.options.map(String):[]
     }));
     return q;
   }
@@ -2416,7 +2417,7 @@ function questionEditor(q,i){
       ${q.type==="coins"?`<div class="notice sequence-note">Enter the correct coins in the answer box above as a list, e.g. "50p, 10p, 2p" or "50p ×1, 10p ×1, 2p ×1". The child taps coins on screen to build the set; it's marked right when their coins exactly match. UK coins: 1p, 2p, 5p, 10p, 20p, 50p, £1, £2.</div>`:""}
       ${q.type==="abacus"?abacusTeacherEditor(q,i):""}
       ${q.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer (e.g. "20,22,24" = 3)</span></label><input data-k="sequence_count" inputmode="numeric" value="${esc(q.sequence_count||"")}" placeholder="${sequenceCount(q)}"></div><div class="notice sequence-note">The child gets one number box per value and fills them in order — no comma needed on the phone keypad. Enter the correct answer above as "20,22,24".</div>`:""}
-      ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="fraction" ${p.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
+      ${q.type==="multipart"?`<div class="multipart-editor">${q.fraction_part_warning?.length?`<div class="notice multipart-warning"><strong>Fraction can't be typed:</strong> Part ${esc(q.fraction_part_warning.join(", "))} has a fraction answer (like "4/10") but pupils answer on a number pad with no "/" key. If the question asks for a decimal fraction, change that answer to a decimal (e.g. 0.4); otherwise reword the part.</div>`:""}${q.letter_part_warning?.length?`<div class="notice multipart-warning"><strong>Letters can't be typed:</strong> Part ${esc(q.letter_part_warning.join(", "))} has a letter/word answer (like "w, z") but pupils answer on a number pad with no letters. Reword so the answer is a number, or list the choices in the question so the child can pick — then check before publishing.</div>`:""}<div class="row between"><strong>Answer parts</strong><button type="button" class="btn secondary" onclick="addQuestionPart(${i})">＋ Add part</button></div>${(q.parts||[]).map((p,pi)=>`<div class="part-editor" data-part-i="${pi}"><div class="row between"><span class="part-label">${esc(p.label||String.fromCharCode(97+pi))}</span><button type="button" class="btn ghost" onclick="deleteQuestionPart(${i},${pi})">Remove</button></div><div class="field"><label>Part prompt</label><input data-part-k="prompt" value="${esc(p.prompt||"")}"></div><div class="field-row-mobile"><div class="field"><label>Answer</label><input data-part-k="answer" value="${esc(p.answer||"")}"></div><div class="field"><label>Unit</label><input data-part-k="answer_unit" value="${esc(p.answer_unit||"")}"></div></div><div class="field"><label>Input type</label><select data-part-k="type"><option value="number" ${p.type==="number"?"selected":""}>Number</option><option value="fraction" ${p.type==="fraction"?"selected":""}>Fraction (n/d)</option><option value="time" ${p.type==="time"?"selected":""}>Time</option><option value="multiple_choice" ${p.type==="multiple_choice"?"selected":""}>Multiple choice</option><option value="sequence" ${p.type==="sequence"?"selected":""}>Number sequence</option></select></div>${p.type==="multiple_choice"?`<div class="field"><label>Choices <span class="label-note">one per line. Include the correct answer exactly as in the Answer box, plus 2 or 3 wrong ones</span></label><textarea data-part-k="options_text" rows="4">${esc((p.options||[]).join("\n"))}</textarea></div>`:""}${p.type==="sequence"?`<div class="field"><label>How many number boxes <span class="label-note">leave blank to match the answer</span></label><input data-part-k="sequence_count" inputmode="numeric" value="${esc(p.sequence_count||"")}" placeholder="${sequenceCount(p)}"></div>`:""}</div>`).join("")}</div>`:""}
 
       ${q.type==="coordinate"?`<div class="interaction-editor"><strong>Coordinate-answer setup</strong><div class="field"><label>Correct coordinate</label><input data-k="coordinate_answer" value="${esc(Array.isArray(q.coordinate_answer)?JSON.stringify(q.coordinate_answer):String(q.coordinate_answer||q.answer||"[0,0]"))}" placeholder="[3, 2]"></div><p class="small muted">Students will see separate x and y boxes.</p></div>`:""}
       ${q.type==="point"?`<div class="interaction-editor">
@@ -2575,7 +2576,7 @@ function syncEditors(){
     });
     const editedHints=[...card.querySelectorAll("[data-hint-i]")].sort((a,b)=>Number(a.dataset.hintI)-Number(b.dataset.hintI)).map(el=>el.value.trim());
     if(editedHints.length){q.hints=editedHints;q.hint=editedHints[0]||"";}
-    if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>q.parts[pi][el.dataset.partK]=el.value);});}
+    if(q.type==="multipart"){q.parts||=[];card.querySelectorAll("[data-part-i]").forEach(pe=>{const pi=Number(pe.dataset.partI);q.parts[pi]||={label:String.fromCharCode(97+pi),prompt:"",answer:"",answer_unit:"",type:"number"};pe.querySelectorAll("[data-part-k]").forEach(el=>{if(el.dataset.partK==="options_text"){q.parts[pi].options=el.value.split("\n").map(x=>x.trim()).filter(Boolean);}else q.parts[pi][el.dataset.partK]=el.value;});});}
 
     // Auto-detect a "draw" question: if the wording asks the child to draw and
     // the teacher hasn't deliberately chosen a type, default to the drawing
@@ -2813,6 +2814,40 @@ async function recordCorrections(homeworkId){
   }catch(e){ /* best-effort — never block publishing on the feedback loop */ }
 }
 
+// Pupils type answers on a NUMBER keypad, so a number-typed answer (or a
+// number-typed part) written in words can never be entered. Publishing refuses
+// these outright: the teacher cannot confirm their way past it.
+function partChoiceProblem(q){
+  if(!q || q.type!=="multipart") return "";
+  for(const part of q.parts||[]){
+    if((part.type||"")!=="multiple_choice") continue;
+    const opts=partChoices(part);
+    const label=part.label||"?";
+    if(opts.length<2) return `part ${label} is multiple choice but has fewer than two choices. Add the choices in the Choices box.`;
+    const want=String(part.answer??"").trim().toLowerCase();
+    if(!opts.some(o=>o.trim().toLowerCase()===want)) return `part ${label}: the correct answer "${part.answer??""}" must be one of the choices, written exactly the same.`;
+  }
+  return "";
+}
+function wordAnswerProblem(q){
+  const isNumberType=t=>t===undefined||t===null||t===""||t==="number";
+  const wordy=a=>{const s=String(a??"").trim(); return (/[a-z]{3,}/i.test(s) && !/^(am|pm)$/i.test(s)) ? s : null;};
+  if(!q) return "";
+  if(q.type==="multipart"){
+    for(const part of q.parts||[]){
+      if(!isNumberType(part.type)) continue;
+      const s=wordy(part.answer);
+      if(s) return `part ${part.label||"?"} has the answer "${s}" written in words, which a pupil cannot type on the number pad. Reword the question so the answer is a number.`;
+    }
+    return "";
+  }
+  if(isNumberType(q.type)){
+    const s=wordy(q.answer);
+    if(s) return `the answer "${s}" is written in words, which a pupil cannot type on the number pad. Reword the question so the answer is a number, or remove it.`;
+  }
+  return "";
+}
+
 window.publishHomework = async () => {
   syncEditors();
   // Re-derive whether this is an edit of an existing (already-published) homework
@@ -2900,6 +2935,20 @@ window.publishHomework = async () => {
     alert(msg);
     document.querySelector(`[data-i="${problemIdx}"]`)?.setAttribute("open","");
     document.querySelector(`[data-i="${problemIdx}"]`)?.scrollIntoView({behavior:"smooth",block:"center"});
+    return;
+  }
+  const choiceIdx=state.draft.questions.findIndex(q=>partChoiceProblem(q));
+  if(choiceIdx>=0){
+    alert(`Question ${choiceIdx+1}: ${partChoiceProblem(state.draft.questions[choiceIdx])}`);
+    document.querySelector(`[data-i="${choiceIdx}"]`)?.setAttribute("open","");
+    document.querySelector(`[data-i="${choiceIdx}"]`)?.scrollIntoView({behavior:"smooth",block:"center"});
+    return;
+  }
+  const wordIdx=state.draft.questions.findIndex(q=>wordAnswerProblem(q));
+  if(wordIdx>=0){
+    alert(`Question ${wordIdx+1}: ${wordAnswerProblem(state.draft.questions[wordIdx])}`);
+    document.querySelector(`[data-i="${wordIdx}"]`)?.setAttribute("open","");
+    document.querySelector(`[data-i="${wordIdx}"]`)?.scrollIntoView({behavior:"smooth",block:"center"});
     return;
   }
   const unchecked=state.draft.questions.findIndex(q=>(q.requires_teacher_check || ["drawing","point","coordinate","matching"].includes(q.type)) && !q.teacher_confirmed);
@@ -3257,7 +3306,12 @@ window.toggleAnswerSign=id=>{
   // Keep any oninput-driven state (e.g. MC fallback selection) in sync.
   el.dispatchEvent(new Event("input",{bubbles:true}));
 };
-function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${timeNeedsMeridiem(p)?`<div class="meridiem-toggle" role="group" aria-label="Choose AM or PM"><button type="button" id="partAm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'AM')">AM</button><button type="button" id="partPm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'PM')">PM</button></div>`:""}${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:p.type==="sequence"?sequenceMarkup(`partSeq${i}`,p):p.type==="fraction"?fractionAnswerMarkup(`part${i}_`):answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
+// Multiple-choice parts: each part has its own option buttons, so a part whose
+// answer is words (e.g. "thirty-six") can be picked rather than typed.
+function partChoices(p){ return Array.isArray(p?.options) ? p.options.map(o=>String(o)).filter(o=>o.trim()) : []; }
+function partChoiceMarkup(i,p){ return `<div class="options part-choices" id="partChoices${i}">${partChoices(p).map(o=>`<button type="button" class="option" data-value="${esc(o)}" onclick="selectPartChoice(${i},this)">${esc(o)}</button>`).join("")}</div>`; }
+window.selectPartChoice=(i,btn)=>{ const box=document.getElementById(`partChoices${i}`); box?.querySelectorAll(".option").forEach(b=>b.classList.toggle("selected", b===btn)); };
+function multipartMarkup(q){return `<div class="multipart-answer">${(q.parts||[]).map((p,i)=>`<section class="student-part"><div class="student-part-heading"><span>${esc(p.label||String.fromCharCode(97+i))}</span>${esc(p.prompt||"")}</div>${p.type==="time"?`<div class="time-answer"><div class="time-field"><label>Hour</label><input id="partHour${i}" inputmode="numeric" maxlength="2"></div><span class="time-colon">:</span><div class="time-field"><label>Minutes</label><input id="partMinute${i}" inputmode="numeric" maxlength="2" placeholder="00"></div>${timeNeedsMeridiem(p)?`<div class="meridiem-toggle" role="group" aria-label="Choose AM or PM"><button type="button" id="partAm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'AM')">AM</button><button type="button" id="partPm${i}" class="meridiem-btn" onclick="setMeridiemPart(${i},'PM')">PM</button></div>`:""}${p.answer_unit?`<span class="answer-unit">${esc(p.answer_unit)}</span>`:""}</div>`:p.type==="sequence"?sequenceMarkup(`partSeq${i}`,p):p.type==="multiple_choice"&&partChoices(p).length>=2?partChoiceMarkup(i,p):p.type==="fraction"?fractionAnswerMarkup(`part${i}_`):answerWithUnitMarkup(`partAnswer${i}`,p.answer_unit||"")}</section>`).join("")}</div>`;}
 
 // Sequence input: one small number box per expected value, so a child can enter
 // a list like 20, 22, 24 on a plain numeric keypad — no comma needed (phone
@@ -3547,7 +3601,7 @@ window.setMeridiemPart=(i,val)=>{
   am.classList.toggle("selected",isAm); pm.classList.toggle("selected",!isAm);
   am.dataset.chosen=isAm?"1":""; pm.dataset.chosen=!isAm?"1":"";
 };
-function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;let t=`${Number(hr)}:${mn.padStart(2,"0")}`;if(timeNeedsMeridiem(p)){const am=document.getElementById("partAm"+i),pm=document.getElementById("partPm"+i);const chosen=am?.dataset.chosen?"AM":(pm?.dataset.chosen?"PM":"");if(!chosen)return null;t=`${t} ${chosen}`;}v.push(t);}else if(p.type==="sequence"){const s=readSequenceAnswer(`partSeq${i}`,sequenceCount(p));if(s===null)return null;v.push(s);}else if(p.type==="fraction"){const f=readFractionAnswer(`part${i}_`);if(f===null)return null;v.push(f);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
+function readMultipartAnswer(q){const v=[];for(let i=0;i<(q.parts||[]).length;i++){const p=q.parts[i];if(p.type==="time"){const hr=$(`#partHour${i}`)?.value.trim()||"",mn=$(`#partMinute${i}`)?.value.trim()||"";if(!hr||!mn||Number(mn)>59)return null;let t=`${Number(hr)}:${mn.padStart(2,"0")}`;if(timeNeedsMeridiem(p)){const am=document.getElementById("partAm"+i),pm=document.getElementById("partPm"+i);const chosen=am?.dataset.chosen?"AM":(pm?.dataset.chosen?"PM":"");if(!chosen)return null;t=`${t} ${chosen}`;}v.push(t);}else if(p.type==="sequence"){const s=readSequenceAnswer(`partSeq${i}`,sequenceCount(p));if(s===null)return null;v.push(s);}else if(p.type==="fraction"){const f=readFractionAnswer(`part${i}_`);if(f===null)return null;v.push(f);}else if(p.type==="multiple_choice"&&partChoices(p).length>=2){const c=document.querySelector(`#partChoices${i} .option.selected`);if(!c)return null;v.push(c.dataset.value);}else{const x=$(`#partAnswer${i}`)?.value.trim()||"";if(!x)return null;v.push(x);}}return v;}
 function multipartIsCorrect(g,q){return Array.isArray(g)&&g.length===(q.parts||[]).length&&q.parts.every((p,i)=>p.type==="sequence"?sequenceIsCorrect(g[i],p.answer):isCorrect(g[i],p.answer));}
 
 
@@ -4433,13 +4487,21 @@ async function finishHomework(){
   // Celebrate the result directly instead. (Persisting Level Up evidence to the
   // understanding model is a deliberate future step, handled separately.)
   if(state.homework.is_level_up){
-    const mastered=state.attempts.filter(a=>a.mastered||a.first_correct).length;
-    // Record the outcome against each question's ORIGINAL homework so a question
-    // the child now got right graduates out of their weak pool and won't reappear
-    // in future Level Ups (and once the pool is small enough, Level Up stops being
-    // offered). Best-effort — never block the celebration on it.
-    recordLevelUpResults();
-    return renderLevelUpComplete(mastered,total);
+    // Record the outcome against each question's ORIGINAL homework (so a question
+    // the child now got right graduates out of their weak pool), and award the
+    // Level Up's gems in the same call. Then take the child straight to their
+    // updated Gems page, which shows the new total and any level they reached.
+    const {gemsEarned,gemsTotal}=await recordLevelUpResults();
+    if(gemsTotal!=null){
+      try{ localStorage.setItem(gemsTotalKey(), String(gemsTotal)); }catch{}
+    }else if(gemsEarned>0){
+      addGems(gemsEarned); // offline/older API: keep the local running total
+    }
+    levelUpGemsJustEarned=gemsEarned;
+    const unlock=checkNewUnlocks(getGemsTotal(), false);
+    showGemProgression();
+    if(unlock.unlocked) setTimeout(()=>showNewUnlocks(unlock.newBadges, unlock.newCertificates), 500);
+    return;
   }
 
   const autoMarked=state.attempts.filter(a=>!a.requires_teacher_review);
@@ -4751,7 +4813,9 @@ window.showGemProgression=function(){
   let g=0;
   try{
     g=getGemsTotal();
-    let p=`<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">💎 ${g} gems · Your journey to mastery</p></div><div class="gem-journey">`;
+    const justEarned=levelUpGemsJustEarned; levelUpGemsJustEarned=0;
+    const banner=justEarned>0?`<div class="card gems-card"><div class="gems-earned"><span class="gem">💎</span> +${justEarned} gems from your Level Up!</div></div>`:"";
+    let p=`${banner}<div class="mission"><h1>🎯 Your Gem Progression</h1><p class="muted">💎 ${g} gems · Your journey to mastery</p></div><div class="gem-journey">`;
     for(let i=0;i<BADGE_THRESHOLDS.length;i++){
       const b=BADGE_THRESHOLDS[i];
       const isAchieved=g>=b.gems;
@@ -4794,6 +4858,9 @@ let lastResultsView=null;
 let restoreResultsView=null;
 window.backToResultsPage=function(){
   if(!lastResultsView){ return appBack(); }
+  // Show the CURRENT gem total (a Level Up may have added gems since this page
+  // was first drawn), not the total from when it was snapshotted.
+  lastResultsView.gemsTotal=getGemsTotal();
   restoreResultsView=lastResultsView;
   try{
     const v=lastResultsView;
@@ -4912,9 +4979,12 @@ window.startLevelUp=async()=>{
   }catch(e){ alert(e.message); }
 };
 
+// Returns the gems the child earned in this Level Up and, when the server saved
+// them, the student's new server-side gem total (null if not saved).
 async function recordLevelUpResults(){
+  const gemsEarned=computeGemsEarned(state.attempts||[]);
   try{
-    if(!state.studentUsername || !state.studentToken) return;
+    if(!state.studentUsername || !state.studentToken) return {gemsEarned,gemsTotal:null};
     const qs=state.homework?.questions||[];
     const results=[];
     for(let i=0;i<qs.length;i++){
@@ -4931,33 +5001,22 @@ async function recordLevelUpResults(){
         retries:Number(a.retries)||0
       });
     }
-    if(!results.length) return;
-    await api("/api/level-up",{method:"POST",body:JSON.stringify({
+    if(!results.length) return {gemsEarned,gemsTotal:null};
+    const data=await api("/api/level-up",{method:"POST",body:JSON.stringify({
       student_username:state.studentUsername,
       student_token:state.studentToken,
-      results
+      results,
+      gems_earned:gemsEarned
     })});
-  }catch(e){ /* best-effort: never block the child's celebration */ }
+    const t=Number(data?.gems_total);
+    return {gemsEarned, gemsTotal:(data?.gems_total!=null && Number.isFinite(t)) ? t : null};
+  }catch(e){
+    return {gemsEarned,gemsTotal:null}; // best-effort: never block the child's celebration
+  }
 }
 
-function renderLevelUpComplete(mastered,total){
-  const pct=Math.round(mastered/Math.max(1,total)*100);
-  const great=pct>=70;
-  app.innerHTML=shell(`
-    <div class="mission">
-      <div class="confetti">⚡ 🎉 ⚡</div>
-      <h1>Level Up complete, ${esc(state.studentName)}!</h1>
-      <p>${great?"Brilliant — you turned tricky questions into ones you can do.":"Good effort — every one of these was something you found hard before, and you took it on."}</p>
-    </div>
-    <div class="score-grid">
-      <div class="score mastery"><span>You got</span><strong>${mastered}/${total}</strong><span>of your tricky questions</span></div>
-    </div>
-    <div class="card level-up-card">
-      <p>These were all questions you found hard in earlier homework. Coming back to them is exactly how understanding grows. 💪</p>
-    </div>
-  `,true);
-  if(state.voiceEnabled) setTimeout(()=>speak(`Level up complete, ${state.studentName}. Great effort revisiting the tricky questions.`),150);
-}
+// Gems earned in the Level Up just finished, shown once on the Gems page.
+let levelUpGemsJustEarned=0;
 
 window.shareTeacherResults = async () => {
   const url = `${location.origin}${location.pathname}#/results?id=${state.homework.id}`;
