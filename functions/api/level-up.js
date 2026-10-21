@@ -18,6 +18,20 @@ const MIN_WEAK_FOR_LEVEL_UP = 5;
 const MAX_QUESTIONS = 10;
 const MIN_QUESTIONS = 5;
 
+// The student's gem total, as the gems page counts it: the sum of gems_earned
+// across all their submissions (Level Up rows included).
+async function gemsTotalFor(db, studentUsername) {
+  try {
+    const row = await db
+      .prepare("SELECT COALESCE(SUM(gems_earned),0) AS total FROM submissions WHERE student_username=?")
+      .bind(studentUsername)
+      .first();
+    return Number(row?.total) || 0;
+  } catch {
+    return null; // client keeps its local total if this fails
+  }
+}
+
 // Record the outcome of a completed Level Up test. Each answered question is
 // written back as a fresh attempt AGAINST ITS ORIGINAL homework/question, so the
 // weak-pool query (which keeps the newest attempt per question) will graduate a
@@ -36,8 +50,13 @@ export async function onRequestPost(context) {
     ).bind(studentUsername, studentToken).first();
     if (!student) return json({ error: "Session expired. Please sign in again." }, { status: 401 });
 
+    // Gems earned in this Level Up (computed on the device with the same rule as a
+    // normal homework). They are stored on a submission row, so the student's gem
+    // total (SUM of gems_earned) includes them. Capped to keep a bad value harmless.
+    const levelUpGems = Math.max(0, Math.min(500, Math.floor(Number(body.gems_earned) || 0)));
+
     const results = Array.isArray(body.results) ? body.results : [];
-    if (!results.length) return json({ ok: true, graduated: 0 });
+    if (!results.length) return json({ ok: true, graduated: 0, gems_earned: 0, gems_total: await gemsTotalFor(db, studentUsername) });
 
     // Group results by their ORIGINAL homework, and append an attempt per question
     // to that homework's most recent submission for this student (or create a
@@ -66,27 +85,36 @@ export async function onRequestPost(context) {
     }
 
     const stmts = [];
+    let gemsLeft = levelUpGems;
     for (const [hwId, attempts] of byHw) {
       const id = crypto.randomUUID();
       const total = attempts.length;
       const correct = attempts.filter(a => a.first_correct).length;
+      // Put the Level Up's gems on the first row only, so they are counted once.
+      const rowGems = gemsLeft;
+      gemsLeft = 0;
       stmts.push(
         db.prepare(
           `INSERT INTO submissions
              (id, homework_id, student_name, student_username,
               original_score, mastery_score, total_questions,
-              attempts_json, strengths_json, needs_practice_json, completed_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+              attempts_json, strengths_json, needs_practice_json, completed_at, gems_earned)
+           VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,?)`
         ).bind(
           id, hwId, studentUsername, studentUsername,
           correct, correct, total,
-          JSON.stringify(attempts), "[]", "[]"
+          JSON.stringify(attempts), "[]", "[]", rowGems
         )
       );
     }
     if (stmts.length) await db.batch(stmts);
 
-    return json({ ok: true, graduated });
+    return json({
+      ok: true,
+      graduated,
+      gems_earned: stmts.length ? levelUpGems : 0,
+      gems_total: await gemsTotalFor(db, studentUsername)
+    });
   } catch (error) {
     return json({ error: error.message }, { status: 500 });
   }
