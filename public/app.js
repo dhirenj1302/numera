@@ -1,6 +1,6 @@
 const $ = (s, el=document) => el.querySelector(s);
 const app = $("#app");
-const NUMERA_VERSION = "v3.29";
+const NUMERA_VERSION = "v3.30";
 const state = {
   files: [],
   sourceImages: [],
@@ -1804,7 +1804,7 @@ window.openCropEditor = i => {
         <div><strong>Adjust worksheet image</strong><small>Question ${i+1} · ${esc(q.source_label||`Page ${Number(q.page_index)+1}`)}</small></div>
         <button class="btn primary crop-save-top" type="button" onclick="saveCropEditor()">Save</button>
       </header>
-      <div class="crop-instructions">Drag the selected area. Use the corner handle to resize it.</div>
+      <div class="crop-instructions">Drag the selected area. Pinch with two fingers, or use the corner handle, to resize it.</div>
       <div class="crop-stage">
         <div class="crop-image-wrap">
           <img src="${source}" alt="Original worksheet page">
@@ -1835,6 +1835,12 @@ window.openCropEditor = i => {
   document.body.classList.add("crop-editor-open");
   const selection=overlay.querySelector(".crop-selection");
   selection.addEventListener("pointerdown",startCropPointer);
+  const stage=overlay.querySelector(".crop-stage");
+  stage.addEventListener("pointerdown",cropStageDown);
+  // Global finger tracking, so a lift anywhere (even off the stage) is seen.
+  window.addEventListener("pointermove",cropPinchMove);
+  window.addEventListener("pointerup",cropStageUp);
+  window.addEventListener("pointercancel",cropStageUp);
   renderCropSelection();
 };
 
@@ -1842,6 +1848,11 @@ window.closeCropEditor = () => {
   document.querySelector(".crop-editor-overlay")?.remove();
   document.body.classList.remove("crop-editor-open");
   cropEditor.mode=null;
+  window.removeEventListener("pointermove",cropPinchMove);
+  window.removeEventListener("pointerup",cropStageUp);
+  window.removeEventListener("pointercancel",cropStageUp);
+  cropTouches.clear();
+  cropPinch=null;
 };
 
 function startCropPointer(e){
@@ -1878,6 +1889,37 @@ function endCropPointer(){
   cropEditor.pointerStart=null;
   cropEditor.startBox=null;
   cropEditor.mode=null;
+}
+
+// Two-finger pinch on touch screens: pinching in or out resizes the selection
+// around its centre. It works wherever the fingers land on the stage, so a child
+// can pinch straight over the photo. Mouse users keep drag-to-resize.
+const cropTouches=new Map();
+let cropPinch=null;
+function cropStageDown(e){
+  if(e.pointerType==="mouse") return;
+  cropTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(cropTouches.size===2){
+    endCropPointer(); // a second finger cancels any single-finger drag in progress
+    const [a,b]=[...cropTouches.values()];
+    cropPinch={dist:Math.hypot(b.x-a.x,b.y-a.y)||1, box:{...cropEditor.box}};
+  }
+}
+function cropPinchMove(e){
+  if(!cropPinch || !cropTouches.has(e.pointerId)) return;
+  cropTouches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(cropTouches.size<2) return;
+  const [a,b]=[...cropTouches.values()];
+  const scale=(Math.hypot(b.x-a.x,b.y-a.y)||1)/cropPinch.dist;
+  const s=cropPinch.box;
+  const cx=s.x+s.width/2, cy=s.y+s.height/2;
+  const w=s.width*scale, h=s.height*scale;
+  cropEditor.box=clampCropBox({x:cx-w/2, y:cy-h/2, width:w, height:h});
+  renderCropSelection();
+}
+function cropStageUp(e){
+  cropTouches.delete(e.pointerId);
+  if(cropTouches.size<2) cropPinch=null;
 }
 
 window.resetCropToAI = () => {

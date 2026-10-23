@@ -135,6 +135,9 @@
   touch-action:none;
 }
 .crop-handle-se{right:-16px;bottom:-16px;cursor:nwse-resize}
+/* Finger-sized target: the visible 30px circle keeps its size, but the touch area
+   around it is roughly 54px, so resizing from the corner is easy on a phone. */
+.crop-handle-se::after{content:"";position:absolute;inset:-12px;border-radius:50%}
 /* Move handle: a SQUARE at the top-left, visually distinct from the round resize
    handle, so it's clear you move from the square and resize from the circle. */
 .crop-handle-move{
